@@ -94,18 +94,38 @@ deltaglider get s3://releases/my-app-v1.0.1.zip
 deltaglider verify s3://releases/my-app-v1.0.1.zip.delta
 ```
 
+## Why xdelta3 Excels at Archive Compression
+
+Traditional diff algorithms (like `diff` or `git diff`) work line-by-line on text files. Binary diff tools like `bsdiff` or `courgette` are optimized for executables. But **xdelta3** is uniquely suited for compressed archives because:
+
+1. **Block-level matching**: xdelta3 uses a rolling hash algorithm to find matching byte sequences at any offset, not just line boundaries. This is crucial for archives where small file changes can shift all subsequent byte positions.
+
+2. **Large window support**: xdelta3 can use reference windows up to 2GB, allowing it to find matches even when content has moved significantly within the archive. Other delta algorithms typically use much smaller windows (64KB-1MB).
+
+3. **Compression-aware**: When you update one file in a ZIP/TAR archive, the archive format itself remains largely identical - same compression dictionary, same structure. xdelta3 preserves these similarities while other algorithms might miss them.
+
+4. **Format agnostic**: Unlike specialized tools (e.g., `courgette` for Chrome updates), xdelta3 works on raw bytes without understanding the file format, making it perfect for any archive type.
+
+### Real-World Example
+When you rebuild a JAR file with one class changed:
+- **Text diff**: 100% different (it's binary data!)
+- **bsdiff**: ~30-40% of original size (optimized for executables, not archives)
+- **xdelta3**: ~0.1-1% of original size (finds the unchanged parts regardless of position)
+
+This is why DeltaGlider achieves 99%+ compression on versioned archives - xdelta3 can identify that 99% of the archive structure and content remains identical between versions.
+
 ## Intelligent File Type Detection
 
 DeltaGlider automatically detects file types and applies the optimal strategy:
 
-| File Type | Strategy | Typical Compression |
-|-----------|----------|-------------------|
-| `.zip`, `.tar`, `.gz` | Binary delta | 99%+ for similar versions |
-| `.dmg`, `.deb`, `.rpm` | Binary delta | 95%+ for similar versions |
-| `.jar`, `.war`, `.ear` | Binary delta | 90%+ for similar builds |
-| `.exe`, `.dll`, `.so` | Direct upload | 0% (no delta benefit) |
-| `.txt`, `.json`, `.xml` | Direct upload | 0% (use gzip instead) |
-| `.sha1`, `.sha512`, `.md5` | Direct upload | 0% (already minimal) |
+| File Type | Strategy | Typical Compression | Why It Works |
+|-----------|----------|-------------------|--------------|
+| `.zip`, `.tar`, `.gz` | Binary delta | 99%+ for similar versions | Archive structure remains consistent between versions |
+| `.dmg`, `.deb`, `.rpm` | Binary delta | 95%+ for similar versions | Package formats with predictable structure |
+| `.jar`, `.war`, `.ear` | Binary delta | 90%+ for similar builds | Java archives with mostly unchanged classes |
+| `.exe`, `.dll`, `.so` | Direct upload | 0% (no delta benefit) | Compiled code changes unpredictably |
+| `.txt`, `.json`, `.xml` | Direct upload | 0% (use gzip instead) | Text files benefit more from standard compression |
+| `.sha1`, `.sha512`, `.md5` | Direct upload | 0% (already minimal) | Hash files are unique by design |
 
 ## Performance Benchmarks
 
