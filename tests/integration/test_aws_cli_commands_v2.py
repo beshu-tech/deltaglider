@@ -2,9 +2,8 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from deltaglider.app.cli.main import cli
