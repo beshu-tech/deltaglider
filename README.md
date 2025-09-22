@@ -190,20 +190,109 @@ deltaglider rm -r s3://backups/2023/
 ### Python SDK
 
 ```python
-from deltaglider import DeltaService
-
-service = DeltaService(
-    bucket="releases",
-    storage_backend="s3",  # or "minio", "r2", etc
+from pathlib import Path
+from deltaglider.core import DeltaService, Leaf, ObjectKey
+from deltaglider.adapters import (
+    S3StorageAdapter,
+    XdeltaAdapter,
+    Sha256Adapter,
+    FsCacheAdapter,
+    UtcClockAdapter,
+    StdLoggerAdapter,
+    NoopMetricsAdapter,
 )
 
-# Upload with automatic compression
-summary = service.put("my-app-v2.0.0.zip", "v2.0.0/")
-print(f"Stored {summary.original_size} as {summary.stored_size}")
-# Output: Stored 104857600 as 98304 (99.9% reduction)
+# Method 1: Use environment variables (recommended)
+# Export these before running your Python script:
+# export AWS_ACCESS_KEY_ID=your-access-key
+# export AWS_SECRET_ACCESS_KEY=your-secret-key
+# export AWS_DEFAULT_REGION=us-east-1
+# export AWS_ENDPOINT_URL=http://localhost:9000  # For MinIO
 
-# Download with automatic reconstruction
-service.get("v2.0.0/my-app-v2.0.0.zip", "local-copy.zip")
+# Method 2: Use AWS profiles
+# Configure with: aws configure --profile production
+# export AWS_PROFILE=production
+
+# Method 3: Explicit configuration in code
+import os
+os.environ['AWS_ACCESS_KEY_ID'] = 'your-access-key'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'your-secret-key'
+os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+
+# For MinIO or other S3-compatible storage
+os.environ['AWS_ENDPOINT_URL'] = 'http://localhost:9000'
+
+# Create service with full configuration
+def create_service(
+    cache_dir="/tmp/.deltaglider/cache",
+    log_level="INFO",
+    endpoint_url=None,  # Override for MinIO/R2
+):
+    """Create a configured DeltaService instance."""
+
+    # Create adapters
+    hasher = Sha256Adapter()
+    storage = S3StorageAdapter(endpoint_url=endpoint_url)
+    diff = XdeltaAdapter()
+    cache = FsCacheAdapter(Path(cache_dir), hasher)
+    clock = UtcClockAdapter()
+    logger = StdLoggerAdapter(level=log_level)
+    metrics = NoopMetricsAdapter()
+
+    # Create service
+    return DeltaService(
+        storage=storage,
+        diff=diff,
+        hasher=hasher,
+        cache=cache,
+        clock=clock,
+        logger=logger,
+        metrics=metrics,
+        tool_version="deltaglider/0.1.0",
+        max_ratio=0.5,  # Only use delta if compression > 50%
+    )
+
+# Basic usage
+service = create_service()
+
+# Upload a file with automatic delta compression
+leaf = Leaf(bucket="my-releases", prefix="v2.0.0")
+summary = service.put(Path("my-app-v2.0.0.zip"), leaf)
+
+print(f"Operation: {summary.operation}")  # 'create_reference' or 'create_delta'
+print(f"Stored at: s3://{summary.bucket}/{summary.key}")
+print(f"Original size: {summary.file_size:,} bytes")
+if summary.delta_size:
+    print(f"Delta size: {summary.delta_size:,} bytes")
+    print(f"Compression: {(1 - summary.delta_ratio) * 100:.1f}%")
+
+# Download and reconstruct a file
+obj_key = ObjectKey(bucket="my-releases", key="v2.0.0/my-app-v2.0.0.zip.delta")
+output_path = Path("downloaded-app.zip")
+service.get(obj_key, output_path)
+
+# Verify file integrity
+result = service.verify(obj_key)
+print(f"Verification: {'✓ Passed' if result.valid else '✗ Failed'}")
+if not result.valid:
+    print(f"Expected: {result.expected_sha256}")
+    print(f"Actual: {result.actual_sha256}")
+
+# For MinIO specifically
+minio_service = create_service(
+    endpoint_url="http://localhost:9000",
+    log_level="DEBUG"  # See detailed operations
+)
+
+# For Cloudflare R2
+r2_service = create_service(
+    endpoint_url="https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
+)
+
+# Advanced: Control delta behavior
+service.should_use_delta("my-app.zip")  # Returns True (archive file)
+service.should_use_delta("config.json")  # Returns False (text file)
+service.should_use_delta("small.txt")   # Returns False (too small)
 ```
 
 ## Migration from AWS CLI
