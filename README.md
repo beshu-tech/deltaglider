@@ -51,19 +51,47 @@ uv pip install deltaglider
 docker run -v ~/.aws:/root/.aws deltaglider/deltaglider --help
 ```
 
-### Your First Upload
+### AWS S3 Compatible Commands
+
+DeltaGlider is a **drop-in replacement** for AWS S3 CLI with automatic delta compression:
 
 ```bash
-# Upload a file - DeltaGlider automatically handles compression
+# Copy files to/from S3 (automatic delta compression for archives)
+deltaglider cp my-app-v1.0.0.zip s3://releases/
+deltaglider cp s3://releases/my-app-v1.0.0.zip ./downloaded.zip
+
+# Recursive directory operations
+deltaglider cp -r ./dist/ s3://releases/v1.0.0/
+deltaglider cp -r s3://releases/v1.0.0/ ./local-copy/
+
+# List buckets and objects
+deltaglider ls                                    # List all buckets
+deltaglider ls s3://releases/                     # List objects
+deltaglider ls -r s3://releases/                  # Recursive listing
+deltaglider ls -h --summarize s3://releases/      # Human-readable with summary
+
+# Remove objects
+deltaglider rm s3://releases/old-version.zip      # Remove single object
+deltaglider rm -r s3://releases/old/              # Recursive removal
+deltaglider rm --dryrun s3://releases/test.zip    # Preview deletion
+
+# Sync directories (only transfers changes)
+deltaglider sync ./local-dir/ s3://releases/      # Sync to S3
+deltaglider sync s3://releases/ ./local-backup/   # Sync from S3
+deltaglider sync --delete ./src/ s3://backup/     # Mirror exactly
+deltaglider sync --exclude "*.log" ./src/ s3://backup/  # Exclude patterns
+
+# Works with MinIO, R2, and S3-compatible storage
+deltaglider cp file.zip s3://bucket/ --endpoint-url http://localhost:9000
+```
+
+### Legacy Commands (still supported)
+
+```bash
+# Original DeltaGlider commands
 deltaglider put my-app-v1.0.0.zip s3://releases/
-
-# Upload v1.0.1 - automatically creates a 99% smaller delta
-deltaglider put my-app-v1.0.1.zip s3://releases/
-# ↑ This 100MB file takes only ~100KB in S3
-
-# Download - automatically reconstructs from delta
 deltaglider get s3://releases/my-app-v1.0.1.zip
-# ↑ Seamless reconstruction, SHA256 verified
+deltaglider verify s3://releases/my-app-v1.0.1.zip.delta
 ```
 
 ## Intelligent File Type Detection
@@ -94,13 +122,33 @@ Download speed:      <100ms reconstruction
 
 ## Integration Examples
 
+### Drop-in AWS CLI Replacement
+
+```bash
+# Before (aws-cli)
+aws s3 cp release-v2.0.0.zip s3://releases/
+aws s3 cp --recursive ./build/ s3://releases/v2.0.0/
+aws s3 ls s3://releases/
+aws s3 rm s3://releases/old-version.zip
+
+# After (deltaglider) - Same commands, 99% less storage!
+deltaglider cp release-v2.0.0.zip s3://releases/
+deltaglider cp -r ./build/ s3://releases/v2.0.0/
+deltaglider ls s3://releases/
+deltaglider rm s3://releases/old-version.zip
+```
+
 ### CI/CD Pipeline (GitHub Actions)
 
 ```yaml
 - name: Upload Release with 99% compression
   run: |
     pip install deltaglider
-    deltaglider put dist/*.zip s3://releases/${{ github.ref_name }}/
+    # Use AWS S3 compatible syntax
+    deltaglider cp dist/*.zip s3://releases/${{ github.ref_name }}/
+
+    # Or use recursive for entire directories
+    deltaglider cp -r dist/ s3://releases/${{ github.ref_name }}/
 ```
 
 ### Backup Script
@@ -109,8 +157,14 @@ Download speed:      <100ms reconstruction
 #!/bin/bash
 # Daily backup with automatic deduplication
 tar -czf backup-$(date +%Y%m%d).tar.gz /data
-deltaglider put backup-*.tar.gz s3://backups/
+deltaglider cp backup-*.tar.gz s3://backups/
 # Only changes are stored, not full backup
+
+# List backups with human-readable sizes
+deltaglider ls -h s3://backups/
+
+# Clean up old backups
+deltaglider rm -r s3://backups/2023/
 ```
 
 ### Python SDK
@@ -130,6 +184,33 @@ print(f"Stored {summary.original_size} as {summary.stored_size}")
 
 # Download with automatic reconstruction
 service.get("v2.0.0/my-app-v2.0.0.zip", "local-copy.zip")
+```
+
+## Migration from AWS CLI
+
+Migrating from `aws s3` to `deltaglider` is as simple as changing the command name:
+
+| AWS CLI | DeltaGlider | Compression Benefit |
+|---------|------------|-------------------|
+| `aws s3 cp file.zip s3://bucket/` | `deltaglider cp file.zip s3://bucket/` | ✅ 99% for similar files |
+| `aws s3 cp -r dir/ s3://bucket/` | `deltaglider cp -r dir/ s3://bucket/` | ✅ 99% for archives |
+| `aws s3 ls s3://bucket/` | `deltaglider ls s3://bucket/` | - |
+| `aws s3 rm s3://bucket/file` | `deltaglider rm s3://bucket/file` | - |
+| `aws s3 sync dir/ s3://bucket/` | `deltaglider sync dir/ s3://bucket/` | ✅ 99% incremental |
+
+### Compatibility Flags
+
+```bash
+# All standard AWS flags work
+deltaglider cp file.zip s3://bucket/ \
+  --endpoint-url http://localhost:9000 \
+  --profile production \
+  --region us-west-2
+
+# DeltaGlider-specific flags
+deltaglider cp file.zip s3://bucket/ \
+  --no-delta              # Disable compression for specific files
+  --max-ratio 0.8         # Only use delta if compression > 20%
 ```
 
 ## Architecture

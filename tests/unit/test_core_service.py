@@ -45,6 +45,7 @@ class TestDeltaServicePut:
 
         # Create reference content and compute its SHA
         import io
+
         ref_content = b"reference content for test"
         ref_sha = service.hasher.sha256(io.BytesIO(ref_content))
 
@@ -92,6 +93,7 @@ class TestDeltaServicePut:
 
         # Create reference content and compute its SHA
         import io
+
         ref_content = b"reference content for test"
         ref_sha = service.hasher.sha256(io.BytesIO(ref_content))
 
@@ -158,6 +160,7 @@ class TestDeltaServiceGet:
 
         # Execute and verify
         from deltaglider.core.errors import StorageIOError
+
         with pytest.raises(StorageIOError):
             service.get(delta_key, temp_dir / "output.zip")
 
@@ -178,6 +181,7 @@ class TestDeltaServiceVerify:
 
         # Create reference content for mock
         import io
+
         ref_content = b"reference content for test"
         ref_sha = service.hasher.sha256(io.BytesIO(ref_content))
 
@@ -212,11 +216,13 @@ class TestDeltaServiceVerify:
             else:
                 # Default case - return reference content
                 return io.BytesIO(ref_content)
+
         mock_storage.get.side_effect = get_side_effect
 
         # Setup mock diff decode to create correct file
         def decode_correct(base, delta, out):
             out.write_bytes(test_content)
+
         mock_diff.decode.side_effect = decode_correct
 
         # Create cached reference
@@ -232,4 +238,3 @@ class TestDeltaServiceVerify:
         assert result.expected_sha256 == test_sha
         assert result.actual_sha256 == test_sha
         assert "verified" in result.message.lower()
-

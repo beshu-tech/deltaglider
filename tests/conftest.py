@@ -42,9 +42,11 @@ def mock_storage():
 def mock_diff():
     """Create mock diff port."""
     mock = Mock()
+
     # Make encode create empty delta file
     def encode_side_effect(base, target, out):
         out.write_bytes(b"delta content")
+
     mock.encode.side_effect = encode_side_effect
     return mock
 
@@ -81,7 +83,15 @@ def metrics_adapter():
 
 
 @pytest.fixture
-def service(mock_storage, mock_diff, real_hasher, cache_adapter, clock_adapter, logger_adapter, metrics_adapter):
+def service(
+    mock_storage,
+    mock_diff,
+    real_hasher,
+    cache_adapter,
+    clock_adapter,
+    logger_adapter,
+    metrics_adapter,
+):
     """Create DeltaService with test adapters."""
     return DeltaService(
         storage=mock_storage,

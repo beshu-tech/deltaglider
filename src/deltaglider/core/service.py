@@ -61,24 +61,39 @@ class DeltaService:
 
         # File extensions that should use delta compression
         self.delta_extensions = {
-            '.zip', '.tar', '.gz', '.tar.gz', '.tgz', '.bz2', '.tar.bz2',
-            '.xz', '.tar.xz', '.7z', '.rar', '.dmg', '.iso', '.pkg',
-            '.deb', '.rpm', '.apk', '.jar', '.war', '.ear'
+            ".zip",
+            ".tar",
+            ".gz",
+            ".tar.gz",
+            ".tgz",
+            ".bz2",
+            ".tar.bz2",
+            ".xz",
+            ".tar.xz",
+            ".7z",
+            ".rar",
+            ".dmg",
+            ".iso",
+            ".pkg",
+            ".deb",
+            ".rpm",
+            ".apk",
+            ".jar",
+            ".war",
+            ".ear",
         }
 
     def should_use_delta(self, filename: str) -> bool:
         """Check if file should use delta compression based on extension."""
         name_lower = filename.lower()
         # Check compound extensions first
-        for ext in ['.tar.gz', '.tar.bz2', '.tar.xz']:
+        for ext in [".tar.gz", ".tar.bz2", ".tar.xz"]:
             if name_lower.endswith(ext):
                 return True
         # Check simple extensions
         return any(name_lower.endswith(ext) for ext in self.delta_extensions)
 
-    def put(
-        self, local_file: Path, leaf: Leaf, max_ratio: float | None = None
-    ) -> PutSummary:
+    def put(self, local_file: Path, leaf: Leaf, max_ratio: float | None = None) -> PutSummary:
         """Upload file as reference or delta (for archive files) or directly (for other files)."""
         if max_ratio is None:
             max_ratio = self.max_ratio
@@ -104,9 +119,7 @@ class DeltaService:
                 "Uploading file directly (no delta for this type)",
                 file_type=Path(original_name).suffix,
             )
-            summary = self._upload_direct(
-                local_file, leaf, file_sha256, original_name, file_size
-            )
+            summary = self._upload_direct(local_file, leaf, file_sha256, original_name, file_size)
         else:
             # For archive files, use the delta compression system
             # Check for existing reference
@@ -311,7 +324,9 @@ class DeltaService:
         self.logger.debug("Cached reference", path=str(cached_path))
 
         # Also create zero-diff delta
-        delta_key = f"{leaf.prefix}/{original_name}.delta" if leaf.prefix else f"{original_name}.delta"
+        delta_key = (
+            f"{leaf.prefix}/{original_name}.delta" if leaf.prefix else f"{original_name}.delta"
+        )
         full_delta_key = f"{leaf.bucket}/{delta_key}"
 
         with tempfile.NamedTemporaryFile() as zero_delta:
@@ -396,7 +411,9 @@ class DeltaService:
                 )
 
             # Create delta metadata
-            delta_key = f"{leaf.prefix}/{original_name}.delta" if leaf.prefix else f"{original_name}.delta"
+            delta_key = (
+                f"{leaf.prefix}/{original_name}.delta" if leaf.prefix else f"{original_name}.delta"
+            )
             full_delta_key = f"{leaf.bucket}/{delta_key}"
 
             delta_meta = DeltaMeta(

@@ -1,6 +1,5 @@
 """Integration tests for xdelta3."""
 
-
 import pytest
 
 from deltaglider.adapters import XdeltaAdapter
@@ -91,7 +90,7 @@ class TestXdeltaIntegration:
         base.write_bytes(b"\x00\x01\x02\x03" * 256)
 
         target = temp_dir / "target.bin"
-        target.write_bytes(b"\x00\x01\x02\x03" * 200 + b"\xFF\xFE\xFD\xFC" * 56)
+        target.write_bytes(b"\x00\x01\x02\x03" * 200 + b"\xff\xfe\xfd\xfc" * 56)
 
         delta = temp_dir / "delta.bin"
         output = temp_dir / "output.bin"

@@ -1,6 +1,5 @@
 """No-op metrics adapter."""
 
-
 from ..ports.metrics import MetricsPort
 
 

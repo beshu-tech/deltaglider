@@ -20,7 +20,8 @@ class XdeltaAdapter(DiffPort):
             "-e",  # encode
             "-f",  # force overwrite
             "-9",  # compression level
-            "-s", str(base),  # source file
+            "-s",
+            str(base),  # source file
             str(target),  # target file
             str(out),  # output delta
         ]
@@ -40,7 +41,8 @@ class XdeltaAdapter(DiffPort):
             self.xdelta_path,
             "-d",  # decode
             "-f",  # force overwrite
-            "-s", str(base),  # source file
+            "-s",
+            str(base),  # source file
             str(delta),  # delta file
             str(out),  # output file
         ]

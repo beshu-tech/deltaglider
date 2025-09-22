@@ -21,8 +21,12 @@ def test_get_command_with_original_name(mock_service):
     """Test get command with original filename (auto-appends .delta)."""
     runner = CliRunner()
 
-    # Mock the service.get method
+    # Mock the service.get method and storage.head
     mock_service.get = Mock()
+    mock_service.storage.head = Mock(side_effect=[
+        None,  # First check for original file returns None
+        Mock()  # Second check for .delta file returns something
+    ])
 
     with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
         # Run get with original filename (should auto-append .delta)
@@ -30,8 +34,8 @@ def test_get_command_with_original_name(mock_service):
 
         # Check it was successful
         assert result.exit_code == 0
-        assert "Looking for delta file: s3://test-bucket/data/myfile.zip.delta" in result.output
-        assert "Successfully reconstructed: myfile.zip" in result.output
+        assert "Found delta file: s3://test-bucket/data/myfile.zip.delta" in result.output
+        assert "Successfully retrieved: myfile.zip" in result.output
 
         # Verify the service was called with the correct arguments
         mock_service.get.assert_called_once()
@@ -49,8 +53,9 @@ def test_get_command_with_delta_name(mock_service):
     """Test get command with explicit .delta filename."""
     runner = CliRunner()
 
-    # Mock the service.get method
+    # Mock the service.get method and storage.head
     mock_service.get = Mock()
+    mock_service.storage.head = Mock(return_value=Mock())  # File exists
 
     with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
         # Run get with explicit .delta filename
@@ -58,8 +63,8 @@ def test_get_command_with_delta_name(mock_service):
 
         # Check it was successful
         assert result.exit_code == 0
-        assert "Looking for delta file" not in result.output  # Should not print this message
-        assert "Successfully reconstructed: myfile.zip" in result.output
+        assert "Found file: s3://test-bucket/data/myfile.zip.delta" in result.output
+        assert "Successfully retrieved: myfile.zip" in result.output
 
         # Verify the service was called with the correct arguments
         mock_service.get.assert_called_once()
@@ -77,23 +82,25 @@ def test_get_command_with_output_option(mock_service):
     """Test get command with custom output path."""
     runner = CliRunner()
 
-    # Mock the service.get method
+    # Mock the service.get method and storage.head
     mock_service.get = Mock()
+    mock_service.storage.head = Mock(side_effect=[
+        None,  # First check for original file returns None
+        Mock()  # Second check for .delta file returns something
+    ])
 
     with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_file = Path(tmpdir) / "custom_output.zip"
 
             # Run get with custom output path
-            result = runner.invoke(cli, [
-                "get",
-                "s3://test-bucket/data/myfile.zip",
-                "-o", str(output_file)
-            ])
+            result = runner.invoke(
+                cli, ["get", "s3://test-bucket/data/myfile.zip", "-o", str(output_file)]
+            )
 
             # Check it was successful
             assert result.exit_code == 0
-            assert f"Successfully reconstructed: {output_file}" in result.output
+            assert f"Successfully retrieved: {output_file}" in result.output
 
             # Verify the service was called with the correct arguments
             mock_service.get.assert_called_once()

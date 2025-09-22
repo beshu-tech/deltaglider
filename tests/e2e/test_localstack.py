@@ -87,7 +87,12 @@ class TestLocalStackE2E:
             output_file = tmpdir / "downloaded.zip"
             result = runner.invoke(
                 cli,
-                ["get", f"s3://{test_bucket}/plugins/plugin-v1.0.1.zip.delta", "-o", str(output_file)],
+                [
+                    "get",
+                    f"s3://{test_bucket}/plugins/plugin-v1.0.1.zip.delta",
+                    "-o",
+                    str(output_file),
+                ],
             )
             assert result.exit_code == 0
             assert output_file.read_text() == file2.read_text()

@@ -1,24 +1,20 @@
 """Integration test for full put/get workflow."""
 
 import io
-import tempfile
 from pathlib import Path
-from unittest.mock import Mock
 
-import pytest
-
-from deltaglider.core import DeltaService, Leaf, ObjectKey
+from deltaglider.core import Leaf, ObjectKey
 
 
 def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
     """Test complete workflow: put a file, then get it back."""
-    # Create test files
+    # Create test files - use .zip extension to trigger delta compression
     file1_content = b"This is the first version of the file."
     file2_content = b"This is the second version of the file with changes."
 
-    file1 = temp_dir / "version1.txt"
-    file2 = temp_dir / "version2.txt"
-    output_file = temp_dir / "recovered.txt"
+    file1 = temp_dir / "version1.zip"
+    file2 = temp_dir / "version2.zip"
+    output_file = temp_dir / "recovered.zip"
 
     file1.write_bytes(file1_content)
     file2.write_bytes(file2_content)
@@ -26,6 +22,7 @@ def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
     # Set up mock_diff decode to write the target content
     def decode_side_effect(base, delta, out):
         out.write_bytes(file2_content)
+
     mock_diff.decode.side_effect = decode_side_effect
 
     leaf = Leaf(bucket="test-bucket", prefix="test/data")
@@ -41,7 +38,7 @@ def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
 
     def mock_put(key, body, metadata, content_type="application/octet-stream"):
         """Mock put_object."""
-        from deltaglider.ports.storage import PutResult, ObjectHead
+        from deltaglider.ports.storage import ObjectHead, PutResult
 
         # Read content if it's a Path
         if isinstance(body, Path):
@@ -59,7 +56,7 @@ def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
                 etag="mock-etag",
                 last_modified=None,
                 metadata=metadata,
-            )
+            ),
         }
         return PutResult(etag="mock-etag")
 
@@ -91,7 +88,7 @@ def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
     # Step 2: Put the second file (creates delta)
     summary2 = service.put(file2, leaf)
     assert summary2.operation == "create_delta"
-    assert summary2.key == "test/data/version2.txt.delta"
+    assert summary2.key == "test/data/version2.zip.delta"
     assert summary2.delta_size is not None
     assert summary2.ref_key == "test/data/reference.bin"
 
@@ -118,6 +115,7 @@ def test_get_with_auto_delta_suffix(service, temp_dir, mock_storage, mock_diff):
     # Set up mock_diff decode to write the target content
     def decode_side_effect(base, delta, out):
         out.write_bytes(file_content)
+
     mock_diff.decode.side_effect = decode_side_effect
 
     leaf = Leaf(bucket="test-bucket", prefix="archive")
@@ -133,7 +131,7 @@ def test_get_with_auto_delta_suffix(service, temp_dir, mock_storage, mock_diff):
 
     def mock_put(key, body, metadata, content_type="application/octet-stream"):
         """Mock put_object."""
-        from deltaglider.ports.storage import PutResult, ObjectHead
+        from deltaglider.ports.storage import ObjectHead, PutResult
 
         # Read content if it's a Path
         if isinstance(body, Path):
@@ -151,7 +149,7 @@ def test_get_with_auto_delta_suffix(service, temp_dir, mock_storage, mock_diff):
                 etag="mock-etag",
                 last_modified=None,
                 metadata=metadata,
-            )
+            ),
         }
         return PutResult(etag="mock-etag")
 

@@ -41,6 +41,7 @@ class TestSha256Adapter:
         # Execute
         adapter = Sha256Adapter()
         import io
+
         stream = io.BytesIO(content)
         actual = adapter.sha256(stream)
 

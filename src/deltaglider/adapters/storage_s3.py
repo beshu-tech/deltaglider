@@ -51,7 +51,12 @@ class S3StorageAdapter(StoragePort):
 
     def list(self, prefix: str) -> Iterator[ObjectHead]:
         """List objects by prefix."""
-        bucket, prefix_key = self._parse_key(prefix)
+        # Handle bucket-only prefix (e.g., "bucket" or "bucket/")
+        if "/" not in prefix:
+            bucket = prefix
+            prefix_key = ""
+        else:
+            bucket, prefix_key = self._parse_key(prefix)
 
         paginator = self.client.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=bucket, Prefix=prefix_key)
@@ -69,7 +74,7 @@ class S3StorageAdapter(StoragePort):
 
         try:
             response = self.client.get_object(Bucket=bucket, Key=object_key)
-            return response["Body"]
+            return response["Body"]  # type: ignore[return-value]
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchKey":
                 raise FileNotFoundError(f"Object not found: {key}") from e
@@ -133,4 +138,3 @@ class S3StorageAdapter(StoragePort):
         """Extract user metadata from S3 response."""
         # S3 returns user metadata as-is (already lowercase)
         return raw_metadata
-
