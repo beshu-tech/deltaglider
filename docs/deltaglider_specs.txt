@@ -1,0 +1,105 @@
+RFC: deltaglider – Delta-Aware S3 File Storage Wrapper
+=====================================================
+
+Author: [Senior Architect]
+Status: Draft
+Date: 2025-09-21
+Version: 0.1
+
+Preface
+-------
+The cost of storing large binary artifacts (e.g., ZIP plugins, deliverables) on Amazon S3 is significant when multiple versions differ 
+by only a few kilobytes. Current practice redundantly uploads full versions, wasting space and increasing transfer times.
+
+deltaglider is a CLI tool that transparently reduces storage overhead by representing a directory of similar large files as:
+- A single reference file (reference.bin) in each leaf S3 prefix.
+- A set of delta files (<original>.delta) encoding differences against the reference.
+
+This approach compresses storage usage to near-optimal while retaining simple semantics.
+
+Goals
+-----
+1. Save S3 space by storing only one full copy of similar files per leaf and small binary deltas for subsequent versions.
+2. Transparent developer workflow – deltaglider put/get mirrors aws s3 cp.
+3. Minimal state management – no manifests, no external databases.
+4. Integrity assurance – strong hashing (SHA256) stored in metadata, verified on upload/restore.
+5. Extensible – simple metadata keys, base for future optimizations.
+
+Non-Goals
+---------
+- Deduplication across multiple directories/prefixes.
+- Streaming delta generation across multiple references (always one reference per leaf).
+- Automatic background compaction or garbage collection.
+
+Terminology
+-----------
+- Leaf prefix: An S3 "directory" containing only files, no further sub-prefixes.
+- Reference file: The first uploaded file in a leaf, stored as reference.bin.
+- Delta file: Result of running xdelta3 against the reference, named <original>.delta.
+
+Architecture
+------------
+Reference Selection
+- First uploaded file in a leaf becomes the reference.
+- Stored as reference.bin.
+- Original filename preserved in metadata of both reference.bin and zero-diff delta.
+
+Delta Creation
+- All subsequent uploads are turned into delta files:
+  xdelta3 -e -9 -s reference.bin <input.zip> <input.zip>.delta
+- Uploaded under the name <input.zip>.delta.
+- Metadata includes:
+  - original_name, file_sha256, file_size, created_at, ref_key, ref_sha256, delta_size
+
+Metadata Requirements
+- All S3 objects uploaded by deltaglider must contain:
+  - tool: deltaglider/0.1.0
+  - original_name
+  - file_sha256
+  - file_size
+  - created_at
+  - ref_key
+  - ref_sha256
+  - delta_size
+
+Local Cache
+- Path: /tmp/.deltaglider/reference_cache/<bucket>/<prefix>/reference.bin
+- Ensures deltas can be computed without repeatedly downloading the reference.
+
+CLI Specification
+-----------------
+deltaglider put <file> <s3://bucket/path/to/leaf/>
+- If no reference.bin: upload <file> as reference.bin, upload zero-diff <file>.delta.
+- If reference.bin exists: create delta, upload <file>.delta with metadata.
+- Output JSON summary.
+
+deltaglider get <s3://bucket/path/file.zip.delta> > file.zip
+- Download reference (from cache or S3).
+- Download delta.
+- Run xdelta3 to reconstruct.
+
+deltaglider verify <s3://bucket/path/file.zip.delta>
+- Hydrate file locally.
+- Recompute SHA256.
+- Compare against metadata.
+
+Error Handling
+--------------
+- Abort if xdelta3 fails.
+- Warn if metadata missing.
+- Warn if delta size > threshold (default 0.5x full size).
+
+Security Considerations
+-----------------------
+- Integrity verified by SHA256.
+- Metadata treated as opaque.
+- Requires IAM: s3:GetObject, s3:PutObject, s3:ListBucket, s3:DeleteObject.
+
+Future Work
+-----------
+- Lazy caching of hydrated files.
+- Support other compression algorithms.
+- Add parallel restore for very large files.
+
+End of RFC
+==========

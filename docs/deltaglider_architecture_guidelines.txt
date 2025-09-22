@@ -1,0 +1,159 @@
+RFC Appendix B: Software Architecture Guidelines for deltaglider
+================================================================
+
+Status: Draft
+Scope: Internal design guidance to keep logic well-abstracted, with CLI as one of multiple possible front-ends.
+
+1. Design Principles
+--------------------
+- Separation of Concerns: Core delta logic is UI-agnostic. CLI, daemon, Lambda, or HTTP service are pluggable adapters.
+- Ports & Adapters (Hexagonal): Define stable ports (interfaces) for storage, diffing, hashing, clock, and logging. Implement adapters for S3, xdelta3, etc.
+- Pure Core: Core orchestration contains no SDK/CLI calls, filesystem, or network I/O directly—only via ports.
+- Deterministic & Idempotent: All operations should be re-runnable without side effects.
+- Fail Fast + Verifiable: Integrity relies on SHA256; errors are explicit and typed.
+- Observability First: Emit structured logs, counters, and timings for every stage.
+
+2. Layering (Modules)
+---------------------
+1. Domain/Core (pure)
+   - DeltaService, Models, Policies, Errors
+2. Ports (Interfaces)
+   - StoragePort, DiffPort, HashPort, ClockPort, CachePort, LoggerPort, MetricsPort
+3. Adapters (Infra)
+   - S3StorageAdapter, XdeltaAdapter, FilesystemCacheAdapter, StdLoggerAdapter, MetricsAdapter
+4. Delivery (Application)
+   - CLI (deltaglider), future HTTP service or Lambda
+
+3. Public Core Interfaces (pseudocode)
+--------------------------------------
+interface StoragePort {
+  head(key) -> ObjectHead | NotFound
+  list(prefix) -> Iterable<ObjectHead>
+  get(key) -> ReadableStream
+  put(key, body, metadata, contentType) -> PutResult
+  delete(key)
+}
+
+interface DiffPort {
+  encode(base, target, out) -> void
+  decode(base, delta, out) -> void
+}
+
+interface HashPort { sha256(pathOrStream) -> Sha256 }
+
+interface CachePort {
+  refPath(bucket, leaf) -> Path
+  hasRef(bucket, leaf, sha) -> Bool
+  writeRef(bucket, leaf, src) -> Path
+  evict(bucket, leaf)
+}
+
+interface DeltaService {
+  put(localFile, leaf, maxRatio) -> PutSummary
+  get(deltaKey, out) -> void
+  verify(deltaKey) -> VerifyResult
+}
+
+4. Domain Use-Cases
+-------------------
+put(localFile, leaf):
+- If no reference.bin: upload as reference, cache, create zero-diff delta.
+- Else: ensure cached reference valid, generate delta, upload with metadata.
+
+get(deltaKey, out):
+- Read metadata, ensure cached reference matches ref_sha256.
+- Decode delta + reference to out stream.
+
+verify(deltaKey):
+- Hydrate file, recompute SHA256, compare with metadata.
+
+5. Object Model
+---------------
+- Leaf { bucket, prefix }
+- ObjectKey { bucket, key }
+- Sha256 { hex }
+- DeltaMeta { tool, original_name, file_sha256, file_size, created_at, ref_key, ref_sha256, delta_size, note? }
+- ReferenceMeta { tool, source_name, file_sha256, created_at, note="reference" }
+
+6. Package Layout
+-----------------
+deltaglider/
+  core/
+  adapters/
+  app/
+  tests/
+
+7. Error Taxonomy
+-----------------
+- NotFoundError, ReferenceCreationRaceError, IntegrityMismatchError
+- DiffEncodeError, DiffDecodeError, StorageIOError
+- PolicyViolationWarning
+
+8. Policies & Validation
+------------------------
+- Delta ratio policy: warn at 0.50 by default.
+- File type filter: default allow .zip only.
+- Metadata validator: reject/repair missing critical fields.
+
+9. Observability
+----------------
+- Structured logs (JSON) with op, key, leaf, sizes, durations, cache hits.
+- Metrics: counters, timers, gauges.
+- Tracing: span per op.
+
+10. Concurrency & Race Handling
+-------------------------------
+- First writer creates reference.bin once.
+- Pragmatic: HEAD -> if NotFound, PUT reference.bin.
+- Re-HEAD after PUT; if mismatch, honor object on S3.
+
+11. I/O & Performance
+---------------------
+- Stream S3 I/O.
+- Reuse HTTP connections.
+- Cache reference, validate via SHA256 before reuse.
+
+12. Security
+------------
+- No secrets in metadata/logs.
+- IAM least privilege.
+- SHA256 is source of truth.
+
+13. Configuration
+-----------------
+- Sources: CLI > env > config file.
+- Keys: DG_MAX_RATIO, DG_ALLOWED_EXTS, DG_CACHE_DIR, DG_LOG_LEVEL.
+
+14. Testing Strategy
+--------------------
+- Unit tests for core.
+- Contract tests with mock ports.
+- Integration with localstack + real xdelta3.
+- Property tests on encode/decode roundtrip.
+- Race tests for concurrent puts.
+
+15. Compatibility
+-----------------
+- Metadata keys append-only.
+- CLI flags backwards compatible.
+
+16. Extensibility
+-----------------
+- Alternative diff engines (bsdiff, zstd-patch).
+- Alternative storage (GCS, Azure Blob).
+- New delivery adapters.
+
+17. CLI as Adapter
+------------------
+- CLI parses args, wires adapters, calls DeltaService.
+- No business logic in CLI.
+
+18. Success Criteria
+--------------------
+- Reference created once.
+- Get hydrates byte-identical file.
+- Verify passes (SHA256 match).
+- Logs/metrics present.
+
+End of RFC Appendix B
+=====================

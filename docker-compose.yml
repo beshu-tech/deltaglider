@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: deltaglider-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - deltaglider-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: deltaglider-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: deltaglider-test:latest
+    container_name: deltaglider-test
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - DG_LOG_LEVEL=DEBUG
+      - PYTEST_ARGS=-v --tb=short
+    volumes:
+      - .:/app:ro
+      - /tmp/.deltaglider:/tmp/.deltaglider
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install -e '.[dev]' &&
+        pytest tests/e2e -v -m e2e
+      "
+    networks:
+      - deltaglider-network
+
+networks:
+  deltaglider-network:
+    driver: bridge
+
+volumes:
+  minio_data:

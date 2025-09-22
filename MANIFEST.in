@@ -1,0 +1,13 @@
+include README.md
+include LICENSE
+include CONTRIBUTING.md
+include pyproject.toml
+recursive-include src *.py
+recursive-include docs *.md *.rst *.txt
+recursive-include tests *.py
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+recursive-exclude tests/data *
+global-exclude *.delta
+global-exclude reference.bin

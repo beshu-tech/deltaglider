@@ -1,0 +1,60 @@
+Appendix A – deltaglider Metadata Key Schema
+===========================================
+
+This appendix defines the S3 object metadata schema used by deltaglider.
+
+General Rules
+-------------
+- All keys MUST be lowercase ASCII (AWS requirement).
+- Metadata is written as user metadata (`x-amz-meta-*`).
+- Metadata must be concise, no nested structures.
+- Timestamps MUST be UTC ISO8601 format.
+
+Reference Object (`reference.bin`)
+---------------------------------
+Stored once per leaf prefix.
+
+Required keys:
+- tool: deltaglider/0.1.0
+- source_name: original filename used to create reference.bin
+- file_sha256: SHA256 of reference file
+- created_at: ISO8601 UTC timestamp
+- note: "reference"
+
+Delta Objects (`<original>.delta`)
+---------------------------------
+Stored for each file uploaded after the reference.
+
+Required keys:
+- tool: deltaglider/0.1.0
+- original_name: original filename (before delta)
+- file_sha256: SHA256 of hydrated file
+- file_size: size in bytes of hydrated file
+- created_at: ISO8601 UTC timestamp
+- ref_key: key of reference file (e.g. path/to/leaf/reference.bin)
+- ref_sha256: SHA256 of reference file
+- delta_size: size in bytes of delta file
+- delta_cmd: "xdelta3 -e -9 -s reference.bin <file> <file>.delta"
+
+Optional keys:
+- note: free-text (e.g., "zero-diff (reference identical)")
+
+Example Metadata – Reference
+----------------------------
+x-amz-meta-tool: deltaglider/0.1.0
+x-amz-meta-source_name: readonlyrest-1.64.2_es7.17.0.zip
+x-amz-meta-file_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+x-amz-meta-created_at: 2025-09-21T12:00:00Z
+x-amz-meta-note: reference
+
+Example Metadata – Delta
+------------------------
+x-amz-meta-tool: deltaglider/0.1.0
+x-amz-meta-original_name: readonlyrest-1.64.2_es8.18.0.zip
+x-amz-meta-file_sha256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+x-amz-meta-file_size: 80718631
+x-amz-meta-created_at: 2025-09-21T12:05:00Z
+x-amz-meta-ref_key: ror/es/1.64.2/reference.bin
+x-amz-meta-ref_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+x-amz-meta-delta_size: 3111228
+x-amz-meta-delta_cmd: xdelta3 -e -9 -s reference.bin <file> <file>.delta
