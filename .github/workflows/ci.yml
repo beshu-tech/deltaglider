@@ -29,7 +29,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system ruff
+          uv pip install --system -e ".[dev]"
 
       - name: Run ruff check
         run: |
@@ -56,11 +56,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system mypy boto3-stubs[s3] types-python-dateutil
+          uv pip install --system -e ".[dev]"
 
       - name: Run mypy
         run: |
-          uv run mypy src tests
+          uv run mypy src
 
   test:
     runs-on: ubuntu-latest
@@ -161,7 +161,7 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ENDPOINT_URL: http://localhost:4566
         run: |
-          uv run pytest tests/e2e -v -m e2e --tb=short
+          uv run pytest tests/e2e -v --tb=short
 
   docker-push:
     needs: [lint, typecheck, test, docker-build, e2e-test]
