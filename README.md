@@ -1,12 +1,18 @@
 # DeltaGlider 🛸
 
+[![GitHub Repository](https://img.shields.io/badge/github-deltaglider-blue.svg)](https://github.com/your-org/deltaglider)
+
+<div align="center">
+  <img src="docs/deltaglider.png" alt="DeltaGlider Logo" width="200"/>
+</div>
+
 **Store 4TB of similar files in 5GB. No, that's not a typo.**
 
 DeltaGlider is a drop-in S3 replacement that achieves 99.9% compression for versioned artifacts, backups, and release archives through intelligent binary delta compression.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](http://xdelta.org/)
+[![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](https://github.com/jmacd/xdelta)
 
 ## The Problem We Solved
 
