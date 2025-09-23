@@ -320,7 +320,7 @@ For ReadOnlyREST, DeltaGlider wasn't just a cost-saving tool—it was a glimpse 
 
 ```bash
 # See your potential savings
-git clone https://github.com/your-org/deltaglider
+git clone https://github.com/beshu-tech/deltaglider
 cd deltaglider
 python calculate_savings.py --path /your/releases
 

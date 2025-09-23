@@ -1,6 +1,6 @@
 # DeltaGlider
 
-[![GitHub Repository](https://img.shields.io/badge/github-deltaglider-blue.svg)](https://github.com/your-org/deltaglider)
+[![GitHub Repository](https://img.shields.io/badge/github-deltaglider-blue.svg)](https://github.com/beshu-tech/deltaglider)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](https://github.com/jmacd/xdelta)
@@ -194,111 +194,95 @@ deltaglider rm -r s3://backups/2023/
 
 ### Python SDK
 
+**[📚 Full SDK Documentation](docs/sdk/README.md)** | **[API Reference](docs/sdk/api.md)** | **[Examples](docs/sdk/examples.md)**
+
+#### Quick Start
+
 ```python
 from pathlib import Path
-from deltaglider.core import DeltaService, DeltaSpace, ObjectKey
-from deltaglider.adapters import (
-    S3StorageAdapter,
-    XdeltaAdapter,
-    Sha256Adapter,
-    FsCacheAdapter,
-    UtcClockAdapter,
-    StdLoggerAdapter,
-    NoopMetricsAdapter,
+from deltaglider import create_client
+
+# Uses AWS credentials from environment or ~/.aws/credentials
+client = create_client()
+
+# Upload a file (auto-detects if delta compression should be used)
+summary = client.upload("my-app-v2.0.0.zip", "s3://releases/v2.0.0/")
+print(f"Compressed from {summary.original_size_mb:.1f}MB to {summary.stored_size_mb:.1f}MB")
+print(f"Saved {summary.savings_percent:.0f}% storage space")
+
+# Download a file (auto-handles delta reconstruction)
+client.download("s3://releases/v2.0.0/my-app-v2.0.0.zip", "local-app.zip")
+```
+
+#### Real-World Example: Software Release Storage
+
+```python
+from deltaglider import create_client
+
+client = create_client()
+
+# Upload multiple versions of your software
+versions = ["v1.0.0", "v1.0.1", "v1.0.2", "v1.1.0"]
+for version in versions:
+    file = f"dist/my-app-{version}.zip"
+    summary = client.upload(file, f"s3://releases/{version}/")
+
+    if summary.is_delta:
+        print(f"{version}: Stored as {summary.stored_size_mb:.1f}MB delta "
+              f"(saved {summary.savings_percent:.0f}%)")
+    else:
+        print(f"{version}: Stored as reference ({summary.original_size_mb:.1f}MB)")
+
+# Result:
+# v1.0.0: Stored as reference (100.0MB)
+# v1.0.1: Stored as 0.2MB delta (saved 99.8%)
+# v1.0.2: Stored as 0.3MB delta (saved 99.7%)
+# v1.1.0: Stored as 5.2MB delta (saved 94.8%)
+```
+
+#### Advanced Example: Automated Backup System
+
+```python
+from datetime import datetime
+from deltaglider import create_client
+
+client = create_client(
+    endpoint_url="http://minio.internal:9000",  # Works with MinIO/R2/etc
+    log_level="INFO"
 )
 
-# Method 1: Use environment variables (recommended)
-# Export these before running your Python script:
-# export AWS_ACCESS_KEY_ID=your-access-key
-# export AWS_SECRET_ACCESS_KEY=your-secret-key
-# export AWS_DEFAULT_REGION=us-east-1
-# export AWS_ENDPOINT_URL=http://localhost:9000  # For MinIO
+def backup_database():
+    """Daily database backup with automatic deduplication."""
+    date = datetime.now().strftime("%Y%m%d")
 
-# Method 2: Use AWS profiles
-# Configure with: aws configure --profile production
-# export AWS_PROFILE=production
+    # Create database dump
+    dump_file = f"backup-{date}.sql.gz"
 
-# Method 3: Explicit configuration in code
-import os
-os.environ['AWS_ACCESS_KEY_ID'] = 'your-access-key'
-os.environ['AWS_SECRET_ACCESS_KEY'] = 'your-secret-key'
-os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
-
-# For MinIO or other S3-compatible storage
-os.environ['AWS_ENDPOINT_URL'] = 'http://localhost:9000'
-
-# Create service with full configuration
-def create_service(
-    cache_dir="/tmp/.deltaglider/cache",
-    log_level="INFO",
-    endpoint_url=None,  # Override for MinIO/R2
-):
-    """Create a configured DeltaService instance."""
-
-    # Create adapters
-    hasher = Sha256Adapter()
-    storage = S3StorageAdapter(endpoint_url=endpoint_url)
-    diff = XdeltaAdapter()
-    cache = FsCacheAdapter(Path(cache_dir), hasher)
-    clock = UtcClockAdapter()
-    logger = StdLoggerAdapter(level=log_level)
-    metrics = NoopMetricsAdapter()
-
-    # Create service
-    return DeltaService(
-        storage=storage,
-        diff=diff,
-        hasher=hasher,
-        cache=cache,
-        clock=clock,
-        logger=logger,
-        metrics=metrics,
-        tool_version="deltaglider/0.1.0",
-        max_ratio=0.5,  # Only use delta if compression > 50%
+    # Upload with delta compression
+    summary = client.upload(
+        dump_file,
+        f"s3://backups/postgres/{date}/",
+        tags={"type": "daily", "database": "production"}
     )
 
-# Basic usage
-service = create_service()
+    # Monitor compression effectiveness
+    if summary.delta_ratio > 0.1:  # If delta is >10% of original
+        print(f"Warning: Low compression ({summary.savings_percent:.0f}%), "
+              "database might have significant changes")
 
-# Upload a file with automatic delta compression
-delta_space = DeltaSpace(bucket="my-releases", prefix="v2.0.0")
-summary = service.put(Path("my-app-v2.0.0.zip"), delta_space)
+    # Keep last 30 days, archive older
+    client.lifecycle_policy("s3://backups/postgres/",
+                           days_before_archive=30,
+                           days_before_delete=90)
 
-print(f"Operation: {summary.operation}")  # 'create_reference' or 'create_delta'
-print(f"Stored at: s3://{summary.bucket}/{summary.key}")
-print(f"Original size: {summary.file_size:,} bytes")
-if summary.delta_size:
-    print(f"Delta size: {summary.delta_size:,} bytes")
-    print(f"Compression: {(1 - summary.delta_ratio) * 100:.1f}%")
+    return summary
 
-# Download and reconstruct a file
-obj_key = ObjectKey(bucket="my-releases", key="v2.0.0/my-app-v2.0.0.zip.delta")
-output_path = Path("downloaded-app.zip")
-service.get(obj_key, output_path)
-
-# Verify file integrity
-result = service.verify(obj_key)
-print(f"Verification: {'✓ Passed' if result.valid else '✗ Failed'}")
-if not result.valid:
-    print(f"Expected: {result.expected_sha256}")
-    print(f"Actual: {result.actual_sha256}")
-
-# For MinIO specifically
-minio_service = create_service(
-    endpoint_url="http://localhost:9000",
-    log_level="DEBUG"  # See detailed operations
-)
-
-# For Cloudflare R2
-r2_service = create_service(
-    endpoint_url="https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
-)
-
-# Advanced: Control delta behavior
-service.should_use_delta("my-app.zip")  # Returns True (archive file)
-service.should_use_delta("config.json")  # Returns False (text file)
-service.should_use_delta("small.txt")   # Returns False (too small)
+# Run backup
+result = backup_database()
+print(f"Backup complete: {result.stored_size_mb:.1f}MB stored")
 ```
+
+For more examples and detailed API documentation, see the [SDK Documentation](docs/sdk/README.md).
 
 ## Migration from AWS CLI
 
@@ -389,7 +373,7 @@ DeltaGlider uses a clean hexagonal architecture:
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-org/deltaglider
+git clone https://github.com/beshu-tech/deltaglider
 cd deltaglider
 
 # Install with dev dependencies
