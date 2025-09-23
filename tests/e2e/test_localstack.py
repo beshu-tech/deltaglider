@@ -14,10 +14,10 @@ from deltaglider.app.cli.main import cli
 
 def extract_json_from_cli_output(output: str) -> dict:
     """Extract JSON from CLI output that may contain log messages."""
-    lines = output.split('\n')
-    json_start = next(i for i, line in enumerate(lines) if line.strip().startswith('{'))
-    json_end = next(i for i in range(json_start, len(lines)) if lines[i].strip() == '}') + 1
-    json_text = '\n'.join(lines[json_start:json_end])
+    lines = output.split("\n")
+    json_start = next(i for i, line in enumerate(lines) if line.strip().startswith("{"))
+    json_end = next(i for i in range(json_start, len(lines)) if lines[i].strip() == "}") + 1
+    json_text = "\n".join(lines[json_start:json_end])
     return json.loads(json_text)
 
 
@@ -166,7 +166,13 @@ class TestLocalStackE2E:
             # Upload second file with low max-ratio
             result = runner.invoke(
                 cli,
-                ["put", str(file2), f"s3://{test_bucket}/test/", "--max-ratio", "0.01"],  # Very low threshold
+                [
+                    "put",
+                    str(file2),
+                    f"s3://{test_bucket}/test/",
+                    "--max-ratio",
+                    "0.01",
+                ],  # Very low threshold
             )
             assert result.exit_code == 0
             # Even with completely different content, xdelta3 is efficient
