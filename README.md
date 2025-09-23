@@ -1,5 +1,6 @@
 # DeltaGlider
 
+[![PyPI version](https://badge.fury.io/py/deltaglider.svg)](https://pypi.org/project/deltaglider/)
 [![GitHub Repository](https://img.shields.io/badge/github-deltaglider-blue.svg)](https://github.com/beshu-tech/deltaglider)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
