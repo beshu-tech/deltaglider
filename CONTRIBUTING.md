@@ -102,11 +102,27 @@ uv run pytest -m e2e
 - Use type hints for all function signatures
 - Write docstrings for all public functions and classes
 
+## Documentation
+
+### SDK Documentation
+
+The SDK documentation is located in `docs/sdk/` and includes:
+- Getting Started guide
+- API Reference
+- Examples and use cases
+- Architecture overview
+
+When making changes to the Python SDK:
+1. Update relevant documentation in `docs/sdk/`
+2. Update docstrings in the code
+3. Run `make generate` in `docs/sdk/` to update auto-generated docs
+
 ## Pull Request Process
 
 1. Update the README.md with details of changes to the interface, if applicable
 2. Update the docs/ with any new functionality
-3. The PR will be merged once you have the sign-off of at least one maintainer
+3. Update SDK documentation if you've modified the client API
+4. The PR will be merged once you have the sign-off of at least one maintainer
 
 ## Performance Considerations
 
