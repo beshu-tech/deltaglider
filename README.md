@@ -6,7 +6,7 @@
 [![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](https://github.com/jmacd/xdelta)
 
 <div align="center">
-  <img src="docs/deltaglider.png" alt="DeltaGlider Logo" width="500"/>
+  <img src="https://github.com/sscarduzio/deltaglider/raw/main/docs/deltaglider.png" alt="DeltaGlider Logo" width="500"/>
 </div>
 
 **Store 4TB of similar files in 5GB. No, that's not a typo.**
