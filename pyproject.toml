@@ -121,6 +121,7 @@ local_scheme = "no-local-version"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["src/deltaglider/_version.py"]
 
 [tool.ruff.lint]
 select = [
