@@ -97,7 +97,7 @@ deltaglider/
 
 9. Observability
 ----------------
-- Structured logs (JSON) with op, key, leaf, sizes, durations, cache hits.
+- Structured logs (JSON) with op, key, deltaspace, sizes, durations, cache hits.
 - Metrics: counters, timers, gauges.
 - Tracing: span per op.
 

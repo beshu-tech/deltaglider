@@ -347,18 +347,18 @@ def rm(
                 if delta_obj:
                     objects_to_delete.append(delta_key)
 
-            # Check for reference.bin in the same leaf
+            # Check for reference.bin in the same deltaspace
             if "/" in obj_key:
-                leaf_prefix = "/".join(obj_key.split("/")[:-1])
-                ref_key = f"{leaf_prefix}/reference.bin"
+                deltaspace_prefix = "/".join(obj_key.split("/")[:-1])
+                ref_key = f"{deltaspace_prefix}/reference.bin"
             else:
                 ref_key = "reference.bin"
 
-            # Only delete reference.bin if it's the last file in the leaf
+            # Only delete reference.bin if it's the last file in the deltaspace
             ref_obj = service.storage.head(f"{bucket}/{ref_key}")
             if ref_obj:
-                # Check if there are other files in this leaf
-                list_prefix = f"{bucket}/{leaf_prefix}" if "/" in obj_key else bucket
+                # Check if there are other files in this deltaspace
+                list_prefix = f"{bucket}/{deltaspace_prefix}" if "/" in obj_key else bucket
                 other_files = list(service.storage.list(list_prefix))
                 # Count files excluding reference.bin
                 non_ref_files = [o for o in other_files if not o.key.endswith("/reference.bin")]

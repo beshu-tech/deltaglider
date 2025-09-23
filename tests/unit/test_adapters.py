@@ -59,10 +59,10 @@ class TestFsCacheAdapter:
         adapter = FsCacheAdapter(temp_dir / "cache", hasher)
 
         # Execute
-        path = adapter.ref_path("my-bucket", "path/to/leaf")
+        path = adapter.ref_path("my-bucket", "path/to/deltaspace")
 
         # Verify
-        expected = temp_dir / "cache" / "my-bucket" / "path/to/leaf" / "reference.bin"
+        expected = temp_dir / "cache" / "my-bucket" / "path/to/deltaspace" / "reference.bin"
         assert path == expected
 
     def test_has_ref_not_exists(self, temp_dir):
@@ -72,7 +72,7 @@ class TestFsCacheAdapter:
         adapter = FsCacheAdapter(temp_dir / "cache", hasher)
 
         # Execute
-        result = adapter.has_ref("bucket", "leaf", "abc123")
+        result = adapter.has_ref("bucket", "deltaspace", "abc123")
 
         # Verify
         assert result is False
@@ -84,13 +84,13 @@ class TestFsCacheAdapter:
         adapter = FsCacheAdapter(temp_dir / "cache", hasher)
 
         # Create reference with known content
-        ref_path = adapter.ref_path("bucket", "leaf")
+        ref_path = adapter.ref_path("bucket", "deltaspace")
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         content = b"reference content"
         ref_path.write_bytes(content)
 
         # Execute with wrong SHA
-        result = adapter.has_ref("bucket", "leaf", "wrong_sha")
+        result = adapter.has_ref("bucket", "deltaspace", "wrong_sha")
 
         # Verify
         assert result is False
@@ -102,14 +102,14 @@ class TestFsCacheAdapter:
         adapter = FsCacheAdapter(temp_dir / "cache", hasher)
 
         # Create reference with known content
-        ref_path = adapter.ref_path("bucket", "leaf")
+        ref_path = adapter.ref_path("bucket", "deltaspace")
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         content = b"reference content"
         ref_path.write_bytes(content)
         correct_sha = hasher.sha256(ref_path)
 
         # Execute with correct SHA
-        result = adapter.has_ref("bucket", "leaf", correct_sha)
+        result = adapter.has_ref("bucket", "deltaspace", correct_sha)
 
         # Verify
         assert result is True
@@ -125,12 +125,12 @@ class TestFsCacheAdapter:
         src.write_text("source content")
 
         # Execute
-        cached = adapter.write_ref("bucket", "leaf/path", src)
+        cached = adapter.write_ref("bucket", "deltaspace/path", src)
 
         # Verify
         assert cached.exists()
         assert cached.read_text() == "source content"
-        assert cached == temp_dir / "cache" / "bucket" / "leaf/path" / "reference.bin"
+        assert cached == temp_dir / "cache" / "bucket" / "deltaspace/path" / "reference.bin"
 
     def test_evict(self, temp_dir):
         """Test evicting cached reference."""
@@ -139,12 +139,12 @@ class TestFsCacheAdapter:
         adapter = FsCacheAdapter(temp_dir / "cache", hasher)
 
         # Create cached reference
-        ref_path = adapter.ref_path("bucket", "leaf")
+        ref_path = adapter.ref_path("bucket", "deltaspace")
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_text("cached")
 
         # Execute
-        adapter.evict("bucket", "leaf")
+        adapter.evict("bucket", "deltaspace")
 
         # Verify
         assert not ref_path.exists()
@@ -190,7 +190,7 @@ class TestStdLoggerAdapter:
         adapter.log_operation(
             op="put",
             key="test/key",
-            leaf="bucket/prefix",
+            deltaspace="bucket/prefix",
             sizes={"file": 1000, "delta": 100},
             durations={"total": 1.5},
             cache_hit=True,

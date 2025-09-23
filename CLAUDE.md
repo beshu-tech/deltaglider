@@ -86,7 +86,7 @@ The codebase follows a clean hexagonal (ports and adapters) architecture:
 src/deltaglider/
 ├── core/           # Domain logic (pure Python, no external dependencies)
 │   ├── service.py  # Main DeltaService orchestration
-│   ├── models.py   # Data models (Leaf, ObjectKey, PutSummary, etc.)
+│   ├── models.py   # Data models (DeltaSpace, ObjectKey, PutSummary, etc.)
 │   └── errors.py   # Domain-specific exceptions
 ├── ports/          # Abstract interfaces (protocols)
 │   ├── storage.py  # StoragePort protocol for S3-like operations
@@ -139,7 +139,7 @@ src/deltaglider/
    - Prevents inefficient compression for dissimilar files
 
 2. **Reference Management** (`core/service.py`):
-   - Reference stored at `{leaf.prefix}/reference.bin`
+   - Reference stored at `{deltaspace.prefix}/reference.bin`
    - SHA256 verification on every read/write
    - Local cache in `/tmp/.deltaglider/reference_cache` for performance
 

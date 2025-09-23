@@ -115,28 +115,28 @@ class TestLocalStackE2E:
             verify_output = extract_json_from_cli_output(result.output)
             assert verify_output["valid"] is True
 
-    def test_multiple_leaves(self, test_bucket, s3_client):
-        """Test multiple leaf directories with separate references."""
+    def test_multiple_deltaspaces(self, test_bucket, s3_client):
+        """Test multiple deltaspace directories with separate references."""
         runner = CliRunner()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
 
-            # Create test files for different leaves
+            # Create test files for different deltaspaces
             file_a1 = tmpdir / "app-a-v1.zip"
             file_a1.write_text("Application A version 1")
 
             file_b1 = tmpdir / "app-b-v1.zip"
             file_b1.write_text("Application B version 1")
 
-            # Upload to different leaves
+            # Upload to different deltaspaces
             result = runner.invoke(cli, ["put", str(file_a1), f"s3://{test_bucket}/apps/app-a/"])
             assert result.exit_code == 0
 
             result = runner.invoke(cli, ["put", str(file_b1), f"s3://{test_bucket}/apps/app-b/"])
             assert result.exit_code == 0
 
-            # Verify each leaf has its own reference
+            # Verify each deltaspace has its own reference
             objects_a = s3_client.list_objects_v2(Bucket=test_bucket, Prefix="apps/app-a/")
             keys_a = [obj["Key"] for obj in objects_a["Contents"]]
             assert "apps/app-a/reference.bin" in keys_a

@@ -108,7 +108,7 @@ class DeltaService:
         self.logger.info(
             "Starting put operation",
             file=str(local_file),
-            leaf=f"{delta_space.bucket}/{delta_space.prefix}",
+            deltaspace=f"{delta_space.bucket}/{delta_space.prefix}",
             size=file_size,
         )
 
@@ -151,7 +151,7 @@ class DeltaService:
         self.logger.log_operation(
             op="put",
             key=summary.key,
-            leaf=f"{delta_space.bucket}/{delta_space.prefix}",
+            deltaspace=f"{delta_space.bucket}/{delta_space.prefix}",
             sizes={"file": file_size, "delta": summary.delta_size or file_size},
             durations={"total": duration},
             cache_hit=summary.cache_hit,
@@ -182,7 +182,7 @@ class DeltaService:
             self.logger.log_operation(
                 op="get",
                 key=object_key.key,
-                leaf=f"{object_key.bucket}",
+                deltaspace=f"{object_key.bucket}",
                 sizes={"file": int(obj_head.metadata.get("file_size", 0))},
                 durations={"total": duration},
                 cache_hit=False,
@@ -198,10 +198,10 @@ class DeltaService:
         # So we use the same bucket as the delta
         if "/" in delta_meta.ref_key:
             ref_parts = delta_meta.ref_key.split("/")
-            leaf_prefix = "/".join(ref_parts[:-1])
+            deltaspace_prefix = "/".join(ref_parts[:-1])
         else:
-            leaf_prefix = ""
-        delta_space = DeltaSpace(bucket=object_key.bucket, prefix=leaf_prefix)
+            deltaspace_prefix = ""
+        delta_space = DeltaSpace(bucket=object_key.bucket, prefix=deltaspace_prefix)
 
         cache_hit = self.cache.has_ref(
             delta_space.bucket, delta_space.prefix, delta_meta.ref_sha256
@@ -247,7 +247,7 @@ class DeltaService:
         self.logger.log_operation(
             op="get",
             key=object_key.key,
-            leaf=f"{delta_space.bucket}/{delta_space.prefix}",
+            deltaspace=f"{delta_space.bucket}/{delta_space.prefix}",
             sizes={"delta": delta_meta.delta_size, "file": delta_meta.file_size},
             durations={"total": duration},
             cache_hit=cache_hit,

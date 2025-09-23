@@ -42,7 +42,7 @@ class StdLoggerAdapter(LoggerPort):
         self,
         op: str,
         key: str,
-        leaf: str,
+        deltaspace: str,
         sizes: dict[str, int],
         durations: dict[str, float],
         cache_hit: bool = False,
@@ -51,7 +51,7 @@ class StdLoggerAdapter(LoggerPort):
         data = {
             "op": op,
             "key": key,
-            "leaf": leaf,
+            "deltaspace": deltaspace,
             "sizes": sizes,
             "durations": durations,
             "cache_hit": cache_hit,

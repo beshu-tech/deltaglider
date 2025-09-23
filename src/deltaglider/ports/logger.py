@@ -26,7 +26,7 @@ class LoggerPort(Protocol):
         self,
         op: str,
         key: str,
-        leaf: str,
+        deltaspace: str,
         sizes: dict[str, int],
         durations: dict[str, float],
         cache_hit: bool = False,
