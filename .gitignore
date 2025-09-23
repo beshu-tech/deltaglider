@@ -81,4 +81,7 @@ docs/_static/
 docs/_templates/
 
 # Logs
-*.logsrc/deltaglider/_version.py
+*.log
+
+# Temporary downloads
+temp_downloads/
