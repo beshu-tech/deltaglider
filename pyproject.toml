@@ -10,7 +10,7 @@ authors = [
     {name = "Beshu Tech", email = "info@beshu.tech"},
 ]
 maintainers = [
-    {name = "Beshu Tech Team", email = "support@beshu.tech"},
+    {name = "Beshu Tech Team", email = "info@beshu.tech"},
 ]
 readme = "README.md"
 license = {text = "MIT"}
