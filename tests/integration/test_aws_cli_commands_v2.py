@@ -47,9 +47,7 @@ class TestCpCommand:
 
             # Patch create_service to return our mock
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
-                result = runner.invoke(
-                    cli, ["cp", str(test_file), "s3://test-bucket/test.zip"]
-                )
+                result = runner.invoke(cli, ["cp", str(test_file), "s3://test-bucket/test.zip"])
 
                 assert result.exit_code == 0
                 assert "upload:" in result.output
@@ -65,11 +63,7 @@ class TestCpCommand:
 
             # Mock storage.head to indicate file exists
             mock_service.storage.head.return_value = ObjectHead(
-                key="test.zip.delta",
-                size=100,
-                etag="test-etag",
-                last_modified=None,
-                metadata={}
+                key="test.zip.delta", size=100, etag="test-etag", last_modified=None, metadata={}
             )
 
             # Mock service.get to create the file
@@ -80,9 +74,7 @@ class TestCpCommand:
             mock_service.get.side_effect = mock_get
 
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
-                result = runner.invoke(
-                    cli, ["cp", "s3://test-bucket/test.zip", str(output_file)]
-                )
+                result = runner.invoke(cli, ["cp", "s3://test-bucket/test.zip", str(output_file)])
 
                 assert result.exit_code == 0
                 assert "download:" in result.output
@@ -114,9 +106,7 @@ class TestCpCommand:
             )
 
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
-                result = runner.invoke(
-                    cli, ["cp", "-r", str(test_dir), "s3://test-bucket/backup/"]
-                )
+                result = runner.invoke(cli, ["cp", "-r", str(test_dir), "s3://test-bucket/backup/"])
 
                 assert result.exit_code == 0
                 # Should upload both files
@@ -153,9 +143,7 @@ class TestSyncCommand:
             )
 
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
-                result = runner.invoke(
-                    cli, ["sync", str(test_dir), "s3://test-bucket/backup/"]
-                )
+                result = runner.invoke(cli, ["sync", str(test_dir), "s3://test-bucket/backup/"])
 
                 assert result.exit_code == 0
                 assert "Sync completed" in result.output
@@ -172,8 +160,20 @@ class TestSyncCommand:
 
             # Mock service methods
             mock_service.storage.list.return_value = [
-                ObjectHead(key="backup/file1.zip.delta", size=100, etag="etag1", last_modified=None, metadata={}),
-                ObjectHead(key="backup/file2.tar.delta", size=200, etag="etag2", last_modified=None, metadata={}),
+                ObjectHead(
+                    key="backup/file1.zip.delta",
+                    size=100,
+                    etag="etag1",
+                    last_modified=None,
+                    metadata={},
+                ),
+                ObjectHead(
+                    key="backup/file2.tar.delta",
+                    size=200,
+                    etag="etag2",
+                    last_modified=None,
+                    metadata={},
+                ),
             ]
             mock_service.storage.head.side_effect = [
                 None,  # file1.zip doesn't exist
@@ -183,9 +183,7 @@ class TestSyncCommand:
             ]
 
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
-                result = runner.invoke(
-                    cli, ["sync", "s3://test-bucket/backup/", str(test_dir)]
-                )
+                result = runner.invoke(cli, ["sync", "s3://test-bucket/backup/", str(test_dir)])
 
                 assert result.exit_code == 0
                 assert "Sync completed" in result.output

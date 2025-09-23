@@ -23,10 +23,12 @@ def test_get_command_with_original_name(mock_service):
 
     # Mock the service.get method and storage.head
     mock_service.get = Mock()
-    mock_service.storage.head = Mock(side_effect=[
-        None,  # First check for original file returns None
-        Mock()  # Second check for .delta file returns something
-    ])
+    mock_service.storage.head = Mock(
+        side_effect=[
+            None,  # First check for original file returns None
+            Mock(),  # Second check for .delta file returns something
+        ]
+    )
 
     with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
         # Run get with original filename (should auto-append .delta)
@@ -84,10 +86,12 @@ def test_get_command_with_output_option(mock_service):
 
     # Mock the service.get method and storage.head
     mock_service.get = Mock()
-    mock_service.storage.head = Mock(side_effect=[
-        None,  # First check for original file returns None
-        Mock()  # Second check for .delta file returns something
-    ])
+    mock_service.storage.head = Mock(
+        side_effect=[
+            None,  # First check for original file returns None
+            Mock(),  # Second check for .delta file returns something
+        ]
+    )
 
     with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
         with tempfile.TemporaryDirectory() as tmpdir:
