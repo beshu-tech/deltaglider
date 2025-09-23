@@ -5,8 +5,8 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
-class Leaf:
-    """S3 leaf prefix."""
+class DeltaSpace:
+    """S3 delta compression space - a prefix containing related files for delta compression."""
 
     bucket: str
     prefix: str

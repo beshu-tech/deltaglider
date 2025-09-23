@@ -3,7 +3,7 @@
 import io
 from pathlib import Path
 
-from deltaglider.core import Leaf, ObjectKey
+from deltaglider.core import DeltaSpace, ObjectKey
 
 
 def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
@@ -25,7 +25,7 @@ def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
 
     mock_diff.decode.side_effect = decode_side_effect
 
-    leaf = Leaf(bucket="test-bucket", prefix="test/data")
+    delta_space = DeltaSpace(bucket="test-bucket", prefix="test/data")
 
     # Storage state tracking
     storage_data = {}
@@ -76,28 +76,28 @@ def test_full_put_get_workflow(service, temp_dir, mock_storage, mock_diff):
     mock_storage.get.side_effect = mock_get
 
     # Step 1: Put the first file (creates reference)
-    summary1 = service.put(file1, leaf)
+    summary1 = service.put(file1, delta_space)
     assert summary1.operation == "create_reference"
     assert summary1.key == "test/data/reference.bin"
 
     # Verify reference was stored
-    ref_key = f"{leaf.bucket}/{leaf.reference_key()}"
+    ref_key = f"{delta_space.bucket}/{delta_space.reference_key()}"
     assert ref_key in storage_data
     assert storage_data[ref_key]["content"] == file1_content
 
     # Step 2: Put the second file (creates delta)
-    summary2 = service.put(file2, leaf)
+    summary2 = service.put(file2, delta_space)
     assert summary2.operation == "create_delta"
     assert summary2.key == "test/data/version2.zip.delta"
     assert summary2.delta_size is not None
     assert summary2.ref_key == "test/data/reference.bin"
 
     # Verify delta was stored
-    delta_key = f"{leaf.bucket}/{summary2.key}"
+    delta_key = f"{delta_space.bucket}/{summary2.key}"
     assert delta_key in storage_data
 
     # Step 3: Get the delta file back
-    obj_key = ObjectKey(bucket=leaf.bucket, key=summary2.key)
+    obj_key = ObjectKey(bucket=delta_space.bucket, key=summary2.key)
     service.get(obj_key, output_file)
 
     # Step 4: Verify the recovered file matches the original
@@ -118,7 +118,7 @@ def test_get_with_auto_delta_suffix(service, temp_dir, mock_storage, mock_diff):
 
     mock_diff.decode.side_effect = decode_side_effect
 
-    leaf = Leaf(bucket="test-bucket", prefix="archive")
+    delta_space = DeltaSpace(bucket="test-bucket", prefix="archive")
 
     # Storage state tracking
     storage_data = {}
@@ -169,7 +169,7 @@ def test_get_with_auto_delta_suffix(service, temp_dir, mock_storage, mock_diff):
     mock_storage.get.side_effect = mock_get
 
     # Put the file
-    summary = service.put(test_file, leaf)
+    summary = service.put(test_file, delta_space)
 
     # Get it back using original name (without .delta)
     # The service should internally look for "mydata.zip.delta"
@@ -178,9 +178,9 @@ def test_get_with_auto_delta_suffix(service, temp_dir, mock_storage, mock_diff):
     # Use the key without .delta suffix
     if summary.operation == "create_reference":
         # If it's a reference, the zero-diff delta was created
-        obj_key = ObjectKey(bucket=leaf.bucket, key="archive/mydata.zip.delta")
+        obj_key = ObjectKey(bucket=delta_space.bucket, key="archive/mydata.zip.delta")
     else:
-        obj_key = ObjectKey(bucket=leaf.bucket, key=summary.key)
+        obj_key = ObjectKey(bucket=delta_space.bucket, key=summary.key)
 
     service.get(obj_key, output_file)
 

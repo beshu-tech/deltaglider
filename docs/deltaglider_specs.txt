@@ -12,14 +12,14 @@ The cost of storing large binary artifacts (e.g., ZIP plugins, deliverables) on 
 by only a few kilobytes. Current practice redundantly uploads full versions, wasting space and increasing transfer times.
 
 deltaglider is a CLI tool that transparently reduces storage overhead by representing a directory of similar large files as:
-- A single reference file (reference.bin) in each leaf S3 prefix.
+- A single reference file (reference.bin) in each DeltaSpace S3 prefix.
 - A set of delta files (<original>.delta) encoding differences against the reference.
 
 This approach compresses storage usage to near-optimal while retaining simple semantics.
 
 Goals
 -----
-1. Save S3 space by storing only one full copy of similar files per leaf and small binary deltas for subsequent versions.
+1. Save S3 space by storing only one full copy of similar files per DeltaSpace and small binary deltas for subsequent versions.
 2. Transparent developer workflow – deltaglider put/get mirrors aws s3 cp.
 3. Minimal state management – no manifests, no external databases.
 4. Integrity assurance – strong hashing (SHA256) stored in metadata, verified on upload/restore.
@@ -28,19 +28,19 @@ Goals
 Non-Goals
 ---------
 - Deduplication across multiple directories/prefixes.
-- Streaming delta generation across multiple references (always one reference per leaf).
+- Streaming delta generation across multiple references (always one reference per DeltaSpace).
 - Automatic background compaction or garbage collection.
 
 Terminology
 -----------
-- Leaf prefix: An S3 "directory" containing only files, no further sub-prefixes.
-- Reference file: The first uploaded file in a leaf, stored as reference.bin.
+- DeltaSpace: An S3 prefix containing related files for delta compression.
+- Reference file: The first uploaded file in a DeltaSpace, stored as reference.bin.
 - Delta file: Result of running xdelta3 against the reference, named <original>.delta.
 
 Architecture
 ------------
 Reference Selection
-- First uploaded file in a leaf becomes the reference.
+- First uploaded file in a DeltaSpace becomes the reference.
 - Stored as reference.bin.
 - Original filename preserved in metadata of both reference.bin and zero-diff delta.
 
@@ -68,7 +68,7 @@ Local Cache
 
 CLI Specification
 -----------------
-deltaglider put <file> <s3://bucket/path/to/leaf/>
+deltaglider put <file> <s3://bucket/path/to/delta_space/>
 - If no reference.bin: upload <file> as reference.bin, upload zero-diff <file>.delta.
 - If reference.bin exists: create delta, upload <file>.delta with metadata.
 - Output JSON summary.

@@ -5,7 +5,7 @@ import warnings
 import pytest
 
 from deltaglider.core import (
-    Leaf,
+    DeltaSpace,
     NotFoundError,
     ObjectKey,
     PolicyViolationWarning,
@@ -19,12 +19,12 @@ class TestDeltaServicePut:
     def test_create_reference_first_file(self, service, sample_file, mock_storage):
         """Test creating reference for first file."""
         # Setup
-        leaf = Leaf(bucket="test-bucket", prefix="test/prefix")
+        delta_space = DeltaSpace(bucket="test-bucket", prefix="test/prefix")
         mock_storage.head.return_value = None  # No reference exists
         mock_storage.put.return_value = PutResult(etag="abc123")
 
         # Execute
-        summary = service.put(sample_file, leaf)
+        summary = service.put(sample_file, delta_space)
 
         # Verify
         assert summary.operation == "create_reference"
@@ -41,7 +41,7 @@ class TestDeltaServicePut:
     def test_create_delta_subsequent_file(self, service, sample_file, mock_storage, mock_diff):
         """Test creating delta for subsequent file."""
         # Setup
-        leaf = Leaf(bucket="test-bucket", prefix="test/prefix")
+        delta_space = DeltaSpace(bucket="test-bucket", prefix="test/prefix")
 
         # Create reference content and compute its SHA
         import io
@@ -68,12 +68,12 @@ class TestDeltaServicePut:
         mock_storage.get.return_value = io.BytesIO(ref_content)
 
         # Create cached reference with matching content
-        ref_path = service.cache.ref_path(leaf.bucket, leaf.prefix)
+        ref_path = service.cache.ref_path(delta_space.bucket, delta_space.prefix)
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_bytes(ref_content)
 
         # Execute
-        summary = service.put(sample_file, leaf)
+        summary = service.put(sample_file, delta_space)
 
         # Verify
         assert summary.operation == "create_delta"
@@ -89,7 +89,7 @@ class TestDeltaServicePut:
     def test_delta_ratio_warning(self, service, sample_file, mock_storage, mock_diff):
         """Test warning when delta ratio exceeds threshold."""
         # Setup
-        leaf = Leaf(bucket="test-bucket", prefix="test/prefix")
+        delta_space = DeltaSpace(bucket="test-bucket", prefix="test/prefix")
 
         # Create reference content and compute its SHA
         import io
@@ -119,14 +119,14 @@ class TestDeltaServicePut:
         mock_diff.encode.side_effect = large_encode
 
         # Create cached reference with matching content
-        ref_path = service.cache.ref_path(leaf.bucket, leaf.prefix)
+        ref_path = service.cache.ref_path(delta_space.bucket, delta_space.prefix)
         ref_path.parent.mkdir(parents=True, exist_ok=True)
         ref_path.write_bytes(ref_content)
 
         # Execute and check warning
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            service.put(sample_file, leaf, max_ratio=0.1)
+            service.put(sample_file, delta_space, max_ratio=0.1)
 
             assert len(w) == 1
             assert issubclass(w[0].category, PolicyViolationWarning)

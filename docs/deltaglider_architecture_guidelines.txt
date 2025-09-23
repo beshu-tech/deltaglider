@@ -42,21 +42,21 @@ interface DiffPort {
 interface HashPort { sha256(pathOrStream) -> Sha256 }
 
 interface CachePort {
-  refPath(bucket, leaf) -> Path
-  hasRef(bucket, leaf, sha) -> Bool
-  writeRef(bucket, leaf, src) -> Path
-  evict(bucket, leaf)
+  refPath(bucket, prefix) -> Path
+  hasRef(bucket, prefix, sha) -> Bool
+  writeRef(bucket, prefix, src) -> Path
+  evict(bucket, prefix)
 }
 
 interface DeltaService {
-  put(localFile, leaf, maxRatio) -> PutSummary
+  put(localFile, deltaSpace, maxRatio) -> PutSummary
   get(deltaKey, out) -> void
   verify(deltaKey) -> VerifyResult
 }
 
 4. Domain Use-Cases
 -------------------
-put(localFile, leaf):
+put(localFile, deltaSpace):
 - If no reference.bin: upload as reference, cache, create zero-diff delta.
 - Else: ensure cached reference valid, generate delta, upload with metadata.
 
@@ -69,7 +69,7 @@ verify(deltaKey):
 
 5. Object Model
 ---------------
-- Leaf { bucket, prefix }
+- DeltaSpace { bucket, prefix }
 - ObjectKey { bucket, key }
 - Sha256 { hex }
 - DeltaMeta { tool, original_name, file_sha256, file_size, created_at, ref_key, ref_sha256, delta_size, note? }

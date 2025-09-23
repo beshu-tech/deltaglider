@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from ...core import DeltaService, Leaf, ObjectKey
+from ...core import DeltaService, DeltaSpace, ObjectKey
 
 
 def is_s3_path(path: str) -> bool:
@@ -55,7 +55,7 @@ def upload_file(
     if not key or key.endswith("/"):
         key = (key + local_path.name).lstrip("/")
 
-    leaf = Leaf(bucket=bucket, prefix="/".join(key.split("/")[:-1]))
+    delta_space = DeltaSpace(bucket=bucket, prefix="/".join(key.split("/")[:-1]))
 
     try:
         # Check if delta should be disabled
@@ -69,7 +69,7 @@ def upload_file(
                 click.echo(f"upload: '{local_path}' to 's3://{bucket}/{key}' ({file_size} bytes)")
         else:
             # Use delta compression
-            summary = service.put(local_path, leaf, max_ratio)
+            summary = service.put(local_path, delta_space, max_ratio)
 
             if not quiet:
                 if summary.delta_size:

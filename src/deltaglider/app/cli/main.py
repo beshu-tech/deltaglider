@@ -16,7 +16,7 @@ from ...adapters import (
     UtcClockAdapter,
     XdeltaAdapter,
 )
-from ...core import DeltaService, Leaf, ObjectKey
+from ...core import DeltaService, DeltaSpace, ObjectKey
 from .aws_compat import (
     copy_s3_to_s3,
     determine_operation,
@@ -537,10 +537,10 @@ def put(service: DeltaService, file: Path, s3_url: str, max_ratio: float | None)
     bucket = parts[0]
     prefix = parts[1] if len(parts) > 1 else ""
 
-    leaf = Leaf(bucket=bucket, prefix=prefix)
+    delta_space = DeltaSpace(bucket=bucket, prefix=prefix)
 
     try:
-        summary = service.put(file, leaf, max_ratio)
+        summary = service.put(file, delta_space, max_ratio)
 
         # Output JSON summary
         output = {

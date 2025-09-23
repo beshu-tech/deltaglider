@@ -12,7 +12,7 @@ General Rules
 
 Reference Object (`reference.bin`)
 ---------------------------------
-Stored once per leaf prefix.
+Stored once per DeltaSpace prefix.
 
 Required keys:
 - tool: deltaglider/0.1.0
@@ -31,7 +31,7 @@ Required keys:
 - file_sha256: SHA256 of hydrated file
 - file_size: size in bytes of hydrated file
 - created_at: ISO8601 UTC timestamp
-- ref_key: key of reference file (e.g. path/to/leaf/reference.bin)
+- ref_key: key of reference file (e.g. path/to/delta_space/reference.bin)
 - ref_sha256: SHA256 of reference file
 - delta_size: size in bytes of delta file
 - delta_cmd: "xdelta3 -e -9 -s reference.bin <file> <file>.delta"

@@ -12,7 +12,7 @@ from .errors import (
 )
 from .models import (
     DeltaMeta,
-    Leaf,
+    DeltaSpace,
     ObjectKey,
     PutSummary,
     ReferenceMeta,
@@ -30,7 +30,7 @@ __all__ = [
     "DiffDecodeError",
     "StorageIOError",
     "PolicyViolationWarning",
-    "Leaf",
+    "DeltaSpace",
     "ObjectKey",
     "Sha256",
     "DeltaMeta",

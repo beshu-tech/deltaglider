@@ -7,18 +7,18 @@ from typing import Protocol
 class CachePort(Protocol):
     """Port for cache operations."""
 
-    def ref_path(self, bucket: str, leaf: str) -> Path:
+    def ref_path(self, bucket: str, prefix: str) -> Path:
         """Get path where reference should be cached."""
         ...
 
-    def has_ref(self, bucket: str, leaf: str, sha: str) -> bool:
+    def has_ref(self, bucket: str, prefix: str, sha: str) -> bool:
         """Check if reference exists and matches SHA."""
         ...
 
-    def write_ref(self, bucket: str, leaf: str, src: Path) -> Path:
+    def write_ref(self, bucket: str, prefix: str, src: Path) -> Path:
         """Cache reference file."""
         ...
 
-    def evict(self, bucket: str, leaf: str) -> None:
+    def evict(self, bucket: str, prefix: str) -> None:
         """Remove cached reference."""
         ...

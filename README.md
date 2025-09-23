@@ -196,7 +196,7 @@ deltaglider rm -r s3://backups/2023/
 
 ```python
 from pathlib import Path
-from deltaglider.core import DeltaService, Leaf, ObjectKey
+from deltaglider.core import DeltaService, DeltaSpace, ObjectKey
 from deltaglider.adapters import (
     S3StorageAdapter,
     XdeltaAdapter,
@@ -261,8 +261,8 @@ def create_service(
 service = create_service()
 
 # Upload a file with automatic delta compression
-leaf = Leaf(bucket="my-releases", prefix="v2.0.0")
-summary = service.put(Path("my-app-v2.0.0.zip"), leaf)
+delta_space = DeltaSpace(bucket="my-releases", prefix="v2.0.0")
+summary = service.put(Path("my-app-v2.0.0.zip"), delta_space)
 
 print(f"Operation: {summary.operation}")  # 'create_reference' or 'create_delta'
 print(f"Stored at: s3://{summary.bucket}/{summary.key}")

@@ -25,7 +25,7 @@ from .errors import (
 )
 from .models import (
     DeltaMeta,
-    Leaf,
+    DeltaSpace,
     ObjectKey,
     PutSummary,
     ReferenceMeta,
@@ -93,7 +93,9 @@ class DeltaService:
         # Check simple extensions
         return any(name_lower.endswith(ext) for ext in self.delta_extensions)
 
-    def put(self, local_file: Path, leaf: Leaf, max_ratio: float | None = None) -> PutSummary:
+    def put(
+        self, local_file: Path, delta_space: DeltaSpace, max_ratio: float | None = None
+    ) -> PutSummary:
         """Upload file as reference or delta (for archive files) or directly (for other files)."""
         if max_ratio is None:
             max_ratio = self.max_ratio
@@ -106,7 +108,7 @@ class DeltaService:
         self.logger.info(
             "Starting put operation",
             file=str(local_file),
-            leaf=f"{leaf.bucket}/{leaf.prefix}",
+            leaf=f"{delta_space.bucket}/{delta_space.prefix}",
             size=file_size,
         )
 
@@ -119,23 +121,25 @@ class DeltaService:
                 "Uploading file directly (no delta for this type)",
                 file_type=Path(original_name).suffix,
             )
-            summary = self._upload_direct(local_file, leaf, file_sha256, original_name, file_size)
+            summary = self._upload_direct(
+                local_file, delta_space, file_sha256, original_name, file_size
+            )
         else:
             # For archive files, use the delta compression system
             # Check for existing reference
-            ref_key = leaf.reference_key()
-            ref_head = self.storage.head(f"{leaf.bucket}/{ref_key}")
+            ref_key = delta_space.reference_key()
+            ref_head = self.storage.head(f"{delta_space.bucket}/{ref_key}")
 
             if ref_head is None:
                 # Create reference
                 summary = self._create_reference(
-                    local_file, leaf, file_sha256, original_name, file_size
+                    local_file, delta_space, file_sha256, original_name, file_size
                 )
             else:
                 # Create delta
                 summary = self._create_delta(
                     local_file,
-                    leaf,
+                    delta_space,
                     ref_head,
                     file_sha256,
                     original_name,
@@ -147,7 +151,7 @@ class DeltaService:
         self.logger.log_operation(
             op="put",
             key=summary.key,
-            leaf=f"{leaf.bucket}/{leaf.prefix}",
+            leaf=f"{delta_space.bucket}/{delta_space.prefix}",
             sizes={"file": file_size, "delta": summary.delta_size or file_size},
             durations={"total": duration},
             cache_hit=summary.cache_hit,
@@ -197,17 +201,19 @@ class DeltaService:
             leaf_prefix = "/".join(ref_parts[:-1])
         else:
             leaf_prefix = ""
-        leaf = Leaf(bucket=object_key.bucket, prefix=leaf_prefix)
+        delta_space = DeltaSpace(bucket=object_key.bucket, prefix=leaf_prefix)
 
-        cache_hit = self.cache.has_ref(leaf.bucket, leaf.prefix, delta_meta.ref_sha256)
+        cache_hit = self.cache.has_ref(
+            delta_space.bucket, delta_space.prefix, delta_meta.ref_sha256
+        )
         if not cache_hit:
-            self._cache_reference(leaf, delta_meta.ref_sha256)
+            self._cache_reference(delta_space, delta_meta.ref_sha256)
 
         # Download delta and decode
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             delta_path = tmp_path / "delta"
-            ref_path = self.cache.ref_path(leaf.bucket, leaf.prefix)
+            ref_path = self.cache.ref_path(delta_space.bucket, delta_space.prefix)
             out_path = tmp_path / "output"
 
             # Download delta
@@ -241,7 +247,7 @@ class DeltaService:
         self.logger.log_operation(
             op="get",
             key=object_key.key,
-            leaf=f"{leaf.bucket}/{leaf.prefix}",
+            leaf=f"{delta_space.bucket}/{delta_space.prefix}",
             sizes={"delta": delta_meta.delta_size, "file": delta_meta.file_size},
             durations={"total": duration},
             cache_hit=cache_hit,
@@ -285,14 +291,14 @@ class DeltaService:
     def _create_reference(
         self,
         local_file: Path,
-        leaf: Leaf,
+        delta_space: DeltaSpace,
         file_sha256: str,
         original_name: str,
         file_size: int,
     ) -> PutSummary:
         """Create reference file."""
-        ref_key = leaf.reference_key()
-        full_ref_key = f"{leaf.bucket}/{ref_key}"
+        ref_key = delta_space.reference_key()
+        full_ref_key = f"{delta_space.bucket}/{ref_key}"
 
         # Create reference metadata
         ref_meta = ReferenceMeta(
@@ -320,14 +326,16 @@ class DeltaService:
             ref_sha256 = file_sha256
 
         # Cache reference
-        cached_path = self.cache.write_ref(leaf.bucket, leaf.prefix, local_file)
+        cached_path = self.cache.write_ref(delta_space.bucket, delta_space.prefix, local_file)
         self.logger.debug("Cached reference", path=str(cached_path))
 
         # Also create zero-diff delta
         delta_key = (
-            f"{leaf.prefix}/{original_name}.delta" if leaf.prefix else f"{original_name}.delta"
+            f"{delta_space.prefix}/{original_name}.delta"
+            if delta_space.prefix
+            else f"{original_name}.delta"
         )
-        full_delta_key = f"{leaf.bucket}/{delta_key}"
+        full_delta_key = f"{delta_space.bucket}/{delta_key}"
 
         with tempfile.NamedTemporaryFile() as zero_delta:
             # Create empty delta using xdelta3
@@ -357,7 +365,7 @@ class DeltaService:
         self.metrics.increment("deltaglider.reference.created")
         return PutSummary(
             operation="create_reference",
-            bucket=leaf.bucket,
+            bucket=delta_space.bucket,
             key=ref_key,
             original_name=original_name,
             file_size=file_size,
@@ -367,7 +375,7 @@ class DeltaService:
     def _create_delta(
         self,
         local_file: Path,
-        leaf: Leaf,
+        delta_space: DeltaSpace,
         ref_head: ObjectHead,
         file_sha256: str,
         original_name: str,
@@ -375,15 +383,15 @@ class DeltaService:
         max_ratio: float,
     ) -> PutSummary:
         """Create delta file."""
-        ref_key = leaf.reference_key()
+        ref_key = delta_space.reference_key()
         ref_sha256 = ref_head.metadata["file_sha256"]
 
         # Ensure reference is cached
-        cache_hit = self.cache.has_ref(leaf.bucket, leaf.prefix, ref_sha256)
+        cache_hit = self.cache.has_ref(delta_space.bucket, delta_space.prefix, ref_sha256)
         if not cache_hit:
-            self._cache_reference(leaf, ref_sha256)
+            self._cache_reference(delta_space, ref_sha256)
 
-        ref_path = self.cache.ref_path(leaf.bucket, leaf.prefix)
+        ref_path = self.cache.ref_path(delta_space.bucket, delta_space.prefix)
 
         # Create delta
         with tempfile.NamedTemporaryFile(suffix=".delta") as delta_file:
@@ -412,9 +420,11 @@ class DeltaService:
 
             # Create delta metadata
             delta_key = (
-                f"{leaf.prefix}/{original_name}.delta" if leaf.prefix else f"{original_name}.delta"
+                f"{delta_space.prefix}/{original_name}.delta"
+                if delta_space.prefix
+                else f"{original_name}.delta"
             )
-            full_delta_key = f"{leaf.bucket}/{delta_key}"
+            full_delta_key = f"{delta_space.bucket}/{delta_key}"
 
             delta_meta = DeltaMeta(
                 tool=self.tool_version,
@@ -445,7 +455,7 @@ class DeltaService:
 
         return PutSummary(
             operation="create_delta",
-            bucket=leaf.bucket,
+            bucket=delta_space.bucket,
             key=delta_key,
             original_name=original_name,
             file_size=file_size,
@@ -457,10 +467,10 @@ class DeltaService:
             cache_hit=cache_hit,
         )
 
-    def _cache_reference(self, leaf: Leaf, expected_sha: str) -> None:
+    def _cache_reference(self, delta_space: DeltaSpace, expected_sha: str) -> None:
         """Download and cache reference."""
-        ref_key = leaf.reference_key()
-        full_ref_key = f"{leaf.bucket}/{ref_key}"
+        ref_key = delta_space.reference_key()
+        full_ref_key = f"{delta_space.bucket}/{ref_key}"
 
         self.logger.info("Caching reference", key=ref_key)
 
@@ -482,7 +492,7 @@ class DeltaService:
             )
 
         # Cache it
-        self.cache.write_ref(leaf.bucket, leaf.prefix, tmp_path)
+        self.cache.write_ref(delta_space.bucket, delta_space.prefix, tmp_path)
         tmp_path.unlink()
 
     def _get_direct(
@@ -533,18 +543,18 @@ class DeltaService:
     def _upload_direct(
         self,
         local_file: Path,
-        leaf: Leaf,
+        delta_space: DeltaSpace,
         file_sha256: str,
         original_name: str,
         file_size: int,
     ) -> PutSummary:
         """Upload file directly to S3 without delta compression."""
         # Construct the key path
-        if leaf.prefix:
-            key = f"{leaf.prefix}/{original_name}"
+        if delta_space.prefix:
+            key = f"{delta_space.prefix}/{original_name}"
         else:
             key = original_name
-        full_key = f"{leaf.bucket}/{key}"
+        full_key = f"{delta_space.bucket}/{key}"
 
         # Create metadata for the file
         metadata = {
@@ -568,7 +578,7 @@ class DeltaService:
 
         return PutSummary(
             operation="upload_direct",
-            bucket=leaf.bucket,
+            bucket=delta_space.bucket,
             key=key,
             original_name=original_name,
             file_size=file_size,

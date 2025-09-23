@@ -113,10 +113,10 @@ src/deltaglider/
 
 ### Core Concepts
 
-1. **Leaf**: A prefix in S3 where related files are stored. Contains a `reference.bin` file that serves as the base for delta compression.
+1. **DeltaSpace**: A prefix in S3 where related files are stored for delta compression. Contains a `reference.bin` file that serves as the base for delta compression.
 
 2. **Delta Compression Flow**:
-   - First file uploaded to a Leaf becomes the reference (stored as `reference.bin`)
+   - First file uploaded to a DeltaSpace becomes the reference (stored as `reference.bin`)
    - Subsequent files are compared against the reference using xdelta3
    - Only the differences (delta) are stored with `.delta` suffix
    - Metadata in S3 tags preserves original file info and delta relationships
@@ -199,7 +199,7 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 
 4. **Atomic Operations**: All S3 operations are atomic - no partial states are left if operations fail.
 
-5. **Reference File Updates**: Currently, the first file uploaded to a Leaf becomes the permanent reference. Future versions may implement reference rotation.
+5. **Reference File Updates**: Currently, the first file uploaded to a DeltaSpace becomes the permanent reference. Future versions may implement reference rotation.
 
 ## Performance Considerations
 
