@@ -61,6 +61,7 @@ def create_service(
     if metrics_type == "cloudwatch":
         # Import here to avoid dependency if not used
         from ...adapters.metrics_cloudwatch import CloudWatchMetricsAdapter
+
         metrics = CloudWatchMetricsAdapter(
             namespace=os.environ.get("DG_METRICS_NAMESPACE", "DeltaGlider"),
             region=region,
@@ -68,6 +69,7 @@ def create_service(
         )
     elif metrics_type == "logging":
         from ...adapters.metrics_cloudwatch import LoggingMetricsAdapter
+
         metrics = LoggingMetricsAdapter(log_level=log_level)
     else:
         metrics = NoopMetricsAdapter()

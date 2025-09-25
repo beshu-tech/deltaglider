@@ -148,9 +148,7 @@ class TestBoto3Compatibility:
 
     def test_put_object_with_bytes(self, client):
         """Test put_object with byte data."""
-        response = client.put_object(
-            Bucket="test-bucket", Key="test.txt", Body=b"Hello World"
-        )
+        response = client.put_object(Bucket="test-bucket", Key="test.txt", Body=b"Hello World")
 
         assert "ETag" in response
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -161,9 +159,7 @@ class TestBoto3Compatibility:
 
     def test_put_object_with_string(self, client):
         """Test put_object with string data."""
-        response = client.put_object(
-            Bucket="test-bucket", Key="test2.txt", Body="Hello String"
-        )
+        response = client.put_object(Bucket="test-bucket", Key="test2.txt", Body="Hello String")
 
         assert "ETag" in response
         obj = client.service.storage.objects["test-bucket/test2.txt"]

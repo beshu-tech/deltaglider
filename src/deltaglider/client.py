@@ -281,7 +281,7 @@ class DeltaGliderClient:
         # Use storage adapter's list_objects method if available
         from .adapters.storage_s3 import S3StorageAdapter
 
-        if hasattr(self.service.storage, 'list_objects'):
+        if hasattr(self.service.storage, "list_objects"):
             # Use list_objects method if available
             result = self.service.storage.list_objects(
                 bucket=Bucket,
@@ -1072,7 +1072,7 @@ class DeltaGliderClient:
         storage_adapter = self.service.storage
 
         # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, 'client'):
+        if hasattr(storage_adapter, "client"):
             try:
                 # Use boto3's native presigned URL generation
                 url = storage_adapter.client.generate_presigned_url(
@@ -1095,9 +1095,7 @@ class DeltaGliderClient:
             base_url = f"https://{bucket}.s3.amazonaws.com"
 
         # Warning: This is not a real presigned URL, just a placeholder
-        self.service.logger.warning(
-            "Using placeholder presigned URL - not suitable for production"
-        )
+        self.service.logger.warning("Using placeholder presigned URL - not suitable for production")
         return f"{base_url}/{key}?expires={ExpiresIn}"
 
     def generate_presigned_post(
@@ -1123,7 +1121,7 @@ class DeltaGliderClient:
         storage_adapter = self.service.storage
 
         # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, 'client'):
+        if hasattr(storage_adapter, "client"):
             try:
                 # Use boto3's native presigned POST generation
                 response = storage_adapter.client.generate_presigned_post(
@@ -1148,7 +1146,7 @@ class DeltaGliderClient:
             "fields": {
                 "key": Key,
                 **(Fields or {}),
-            }
+            },
         }
 
     def _parse_tagging(self, tagging: str) -> dict[str, str]:

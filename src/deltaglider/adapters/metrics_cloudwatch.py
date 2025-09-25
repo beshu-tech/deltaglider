@@ -200,21 +200,12 @@ class LoggingMetricsAdapter(MetricsPort):
 
     def increment(self, name: str, value: int = 1, tags: dict[str, str] | None = None) -> None:
         """Log counter increment."""
-        logger.log(
-            self.log_level,
-            f"METRIC:INCREMENT {name}={value} tags={tags or {}}"
-        )
+        logger.log(self.log_level, f"METRIC:INCREMENT {name}={value} tags={tags or {}}")
 
     def gauge(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
         """Log gauge value."""
-        logger.log(
-            self.log_level,
-            f"METRIC:GAUGE {name}={value:.2f} tags={tags or {}}"
-        )
+        logger.log(self.log_level, f"METRIC:GAUGE {name}={value:.2f} tags={tags or {}}")
 
     def timing(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
         """Log timing value."""
-        logger.log(
-            self.log_level,
-            f"METRIC:TIMING {name}={value:.2f}ms tags={tags or {}}"
-        )
+        logger.log(self.log_level, f"METRIC:TIMING {name}={value:.2f}ms tags={tags or {}}")
