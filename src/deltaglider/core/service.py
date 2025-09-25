@@ -3,7 +3,7 @@
 import tempfile
 import warnings
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from ..ports import (
     CachePort,
@@ -584,3 +584,208 @@ class DeltaService:
             file_size=file_size,
             file_sha256=file_sha256,
         )
+
+    def delete(self, object_key: ObjectKey) -> dict[str, Any]:
+        """Delete an object (delta-aware).
+
+        For delta files, just deletes the delta.
+        For reference files, checks if any deltas depend on it first.
+        For direct uploads, simply deletes the file.
+
+        Returns:
+            dict with deletion details including type and any warnings
+        """
+        start_time = self.clock.now()
+        full_key = f"{object_key.bucket}/{object_key.key}"
+
+        self.logger.info("Starting delete operation", key=object_key.key)
+
+        # Check if object exists
+        obj_head = self.storage.head(full_key)
+        if obj_head is None:
+            raise NotFoundError(f"Object not found: {object_key.key}")
+
+        # Determine object type
+        is_reference = object_key.key.endswith("/reference.bin")
+        is_delta = object_key.key.endswith(".delta")
+        is_direct = obj_head.metadata.get("compression") == "none"
+
+        result: dict[str, Any] = {
+            "key": object_key.key,
+            "bucket": object_key.bucket,
+            "deleted": False,
+            "type": "unknown",
+            "warnings": [],
+        }
+
+        if is_reference:
+            # Check if any deltas depend on this reference
+            prefix = object_key.key.rsplit("/", 1)[0] if "/" in object_key.key else ""
+            dependent_deltas = []
+
+            for obj in self.storage.list(f"{object_key.bucket}/{prefix}"):
+                if obj.key.endswith(".delta") and obj.key != object_key.key:
+                    # Check if this delta references our reference
+                    delta_head = self.storage.head(f"{object_key.bucket}/{obj.key}")
+                    if delta_head and delta_head.metadata.get("ref_key") == object_key.key:
+                        dependent_deltas.append(obj.key)
+
+            if dependent_deltas:
+                warnings_list = result["warnings"]
+                assert isinstance(warnings_list, list)
+                warnings_list.append(
+                    f"Reference has {len(dependent_deltas)} dependent delta(s). "
+                    "Deleting this will make those deltas unrecoverable."
+                )
+                self.logger.warning(
+                    "Reference has dependent deltas",
+                    ref_key=object_key.key,
+                    delta_count=len(dependent_deltas),
+                    deltas=dependent_deltas[:5],  # Log first 5
+                )
+
+            # Delete the reference
+            self.storage.delete(full_key)
+            result["deleted"] = True
+            result["type"] = "reference"
+            result["dependent_deltas"] = len(dependent_deltas)
+
+            # Clear from cache if present
+            if "/" in object_key.key:
+                deltaspace_prefix = object_key.key.rsplit("/", 1)[0]
+                try:
+                    self.cache.evict(object_key.bucket, deltaspace_prefix)
+                except Exception as e:
+                    self.logger.debug(f"Could not clear cache for {object_key.key}: {e}")
+
+        elif is_delta:
+            # Simply delete the delta file
+            self.storage.delete(full_key)
+            result["deleted"] = True
+            result["type"] = "delta"
+            result["original_name"] = obj_head.metadata.get("original_name", "unknown")
+
+        elif is_direct:
+            # Simply delete the direct upload
+            self.storage.delete(full_key)
+            result["deleted"] = True
+            result["type"] = "direct"
+            result["original_name"] = obj_head.metadata.get("original_name", object_key.key)
+
+        else:
+            # Unknown file type, delete anyway
+            self.storage.delete(full_key)
+            result["deleted"] = True
+            result["type"] = "unknown"
+
+        duration = (self.clock.now() - start_time).total_seconds()
+        self.logger.log_operation(
+            op="delete",
+            key=object_key.key,
+            deltaspace=f"{object_key.bucket}",
+            durations={"total": duration},
+            sizes={},
+            cache_hit=False,
+        )
+        self.metrics.timing("deltaglider.delete.duration", duration)
+        self.metrics.increment(f"deltaglider.delete.{result['type']}")
+
+        return result
+
+    def delete_recursive(self, bucket: str, prefix: str) -> dict[str, Any]:
+        """Recursively delete all objects under a prefix (delta-aware).
+
+        Handles delta relationships intelligently:
+        - Deletes deltas before references
+        - Warns about orphaned deltas
+        - Handles direct uploads
+
+        Args:
+            bucket: S3 bucket name
+            prefix: Prefix to delete recursively
+
+        Returns:
+            dict with deletion statistics and any warnings
+        """
+        start_time = self.clock.now()
+        self.logger.info("Starting recursive delete", bucket=bucket, prefix=prefix)
+
+        # Ensure prefix ends with / for proper directory deletion
+        if prefix and not prefix.endswith("/"):
+            prefix = f"{prefix}/"
+
+        # Collect all objects under prefix
+        objects_to_delete = []
+        references = []
+        deltas = []
+        direct_uploads = []
+
+        for obj in self.storage.list(f"{bucket}/{prefix}" if prefix else bucket):
+            if not obj.key.startswith(prefix) and prefix:
+                continue
+
+            if obj.key.endswith("/reference.bin"):
+                references.append(obj.key)
+            elif obj.key.endswith(".delta"):
+                deltas.append(obj.key)
+            else:
+                # Check if it's a direct upload
+                obj_head = self.storage.head(f"{bucket}/{obj.key}")
+                if obj_head and obj_head.metadata.get("compression") == "none":
+                    direct_uploads.append(obj.key)
+                else:
+                    objects_to_delete.append(obj.key)
+
+        result: dict[str, Any] = {
+            "bucket": bucket,
+            "prefix": prefix,
+            "deleted_count": 0,
+            "failed_count": 0,
+            "deltas_deleted": len(deltas),
+            "references_deleted": len(references),
+            "direct_deleted": len(direct_uploads),
+            "other_deleted": len(objects_to_delete),
+            "errors": [],
+            "warnings": [],
+        }
+
+        # Delete in order: other files -> direct uploads -> deltas -> references
+        # This ensures we don't delete references that deltas depend on prematurely
+        delete_order = objects_to_delete + direct_uploads + deltas + references
+
+        for key in delete_order:
+            try:
+                self.storage.delete(f"{bucket}/{key}")
+                deleted_count = result["deleted_count"]
+                assert isinstance(deleted_count, int)
+                result["deleted_count"] = deleted_count + 1
+                self.logger.debug(f"Deleted {key}")
+            except Exception as e:
+                failed_count = result["failed_count"]
+                assert isinstance(failed_count, int)
+                result["failed_count"] = failed_count + 1
+                errors_list = result["errors"]
+                assert isinstance(errors_list, list)
+                errors_list.append(f"Failed to delete {key}: {str(e)}")
+                self.logger.error(f"Failed to delete {key}: {e}")
+
+        # Clear any cached references for this prefix
+        if references:
+            try:
+                self.cache.evict(bucket, prefix.rstrip("/") if prefix else "")
+            except Exception as e:
+                self.logger.debug(f"Could not clear cache for {bucket}/{prefix}: {e}")
+
+        duration = (self.clock.now() - start_time).total_seconds()
+        self.logger.info(
+            "Recursive delete complete",
+            bucket=bucket,
+            prefix=prefix,
+            deleted=result["deleted_count"],
+            failed=result["failed_count"],
+            duration=duration,
+        )
+        self.metrics.timing("deltaglider.delete_recursive.duration", duration)
+        self.metrics.increment("deltaglider.delete_recursive.completed")
+
+        return result

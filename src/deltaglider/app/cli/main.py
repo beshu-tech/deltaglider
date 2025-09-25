@@ -17,6 +17,7 @@ from ...adapters import (
     XdeltaAdapter,
 )
 from ...core import DeltaService, DeltaSpace, ObjectKey
+from ...ports import MetricsPort
 from .aws_compat import (
     copy_s3_to_s3,
     determine_operation,
@@ -39,6 +40,7 @@ def create_service(
     # Get config from environment
     cache_dir = Path(os.environ.get("DG_CACHE_DIR", "/tmp/.deltaglider/reference_cache"))
     max_ratio = float(os.environ.get("DG_MAX_RATIO", "0.5"))
+    metrics_type = os.environ.get("DG_METRICS", "logging")  # Options: noop, logging, cloudwatch
 
     # Set AWS environment variables if provided
     if endpoint_url:
@@ -55,7 +57,24 @@ def create_service(
     cache = FsCacheAdapter(cache_dir, hasher)
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)
-    metrics = NoopMetricsAdapter()
+
+    # Create metrics adapter based on configuration
+    metrics: MetricsPort
+    if metrics_type == "cloudwatch":
+        # Import here to avoid dependency if not used
+        from ...adapters.metrics_cloudwatch import CloudWatchMetricsAdapter
+
+        metrics = CloudWatchMetricsAdapter(
+            namespace=os.environ.get("DG_METRICS_NAMESPACE", "DeltaGlider"),
+            region=region,
+            endpoint_url=endpoint_url if endpoint_url and "localhost" in endpoint_url else None,
+        )
+    elif metrics_type == "logging":
+        from ...adapters.metrics_cloudwatch import LoggingMetricsAdapter
+
+        metrics = LoggingMetricsAdapter(log_level=log_level)
+    else:
+        metrics = NoopMetricsAdapter()
 
     # Create service
     return DeltaService(
