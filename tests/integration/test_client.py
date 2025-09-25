@@ -1,6 +1,7 @@
 """Tests for the DeltaGlider client with boto3-compatible APIs."""
 
 import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ class MockStorage:
                 key=key,
                 size=obj["size"],
                 etag=obj.get("etag", "mock-etag"),
-                last_modified=obj.get("last_modified"),
+                last_modified=obj.get("last_modified", datetime.now(UTC)),
                 metadata=obj.get("metadata", {}),
             )
         return None
@@ -39,7 +40,9 @@ class MockStorage:
         """Mock list operation for StoragePort interface."""
         for key, _obj in self.objects.items():
             if key.startswith(prefix):
-                yield self.head(key)
+                obj_head = self.head(key)
+                if obj_head is not None:
+                    yield obj_head
 
     def list_objects(self, bucket, prefix="", delimiter="", max_keys=1000, start_after=None):
         """Mock list_objects operation for S3 features."""

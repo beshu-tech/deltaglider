@@ -10,6 +10,11 @@ from ..ports.metrics import MetricsPort
 
 logger = logging.getLogger(__name__)
 
+# Constants for byte conversions
+BYTES_PER_KB = 1024
+BYTES_PER_MB = 1024 * 1024
+BYTES_PER_GB = 1024 * 1024 * 1024
+
 
 class CloudWatchMetricsAdapter(MetricsPort):
     """CloudWatch implementation of MetricsPort for AWS-native metrics."""
@@ -160,11 +165,11 @@ class CloudWatchMetricsAdapter(MetricsPort):
 
         # Size metrics
         if any(x in name_lower for x in ["size", "bytes"]):
-            if value > 1024 * 1024 * 1024:  # > 1GB
+            if value > BYTES_PER_GB:  # > 1GB
                 return "Gigabytes"
-            elif value > 1024 * 1024:  # > 1MB
+            elif value > BYTES_PER_MB:  # > 1MB
                 return "Megabytes"
-            elif value > 1024:  # > 1KB
+            elif value > BYTES_PER_KB:  # > 1KB
                 return "Kilobytes"
             return "Bytes"
 

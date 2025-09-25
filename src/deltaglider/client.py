@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .adapters.storage_s3 import S3StorageAdapter
 from .core import DeltaService, DeltaSpace, ObjectKey
 
 
@@ -279,8 +280,6 @@ class DeltaGliderClient:
             ListObjectsResponse with objects and common prefixes
         """
         # Use storage adapter's list_objects method if available
-        from .adapters.storage_s3 import S3StorageAdapter
-
         if hasattr(self.service.storage, "list_objects"):
             # Use list_objects method if available
             result = self.service.storage.list_objects(
@@ -364,8 +363,6 @@ class DeltaGliderClient:
         Returns:
             Response dict with deletion details
         """
-        from .core.models import ObjectKey
-
         # Use core service's delta-aware delete
         object_key = ObjectKey(bucket=Bucket, key=Key)
         delete_result = self.service.delete(object_key)
@@ -413,8 +410,6 @@ class DeltaGliderClient:
         Returns:
             Response dict with deleted objects
         """
-        from .core.models import ObjectKey
-
         deleted = []
         errors = []
         delta_info = []
@@ -1051,6 +1046,26 @@ class DeltaGliderClient:
             direct_objects=direct_count,
         )
 
+    def _try_boto3_presigned_operation(self, operation: str, **kwargs: Any) -> Any | None:
+        """Try to generate presigned operation using boto3 client, return None if not available."""
+        storage_adapter = self.service.storage
+
+        # Check if storage adapter has boto3 client
+        if hasattr(storage_adapter, "client"):
+            try:
+                if operation == "url":
+                    return str(storage_adapter.client.generate_presigned_url(**kwargs))
+                elif operation == "post":
+                    return dict(storage_adapter.client.generate_presigned_post(**kwargs))
+            except AttributeError:
+                # storage_adapter does not have a 'client' attribute
+                pass
+            except Exception as e:
+                # Fall back to manual construction if needed
+                self.service.logger.warning(f"Failed to generate presigned {operation}: {e}")
+
+        return None
+
     def generate_presigned_url(
         self,
         ClientMethod: str,
@@ -1067,23 +1082,15 @@ class DeltaGliderClient:
         Returns:
             Presigned URL string
         """
-        # Access the underlying S3 client through storage adapter
-        # Note: service.storage should be an S3StorageAdapter instance
-        storage_adapter = self.service.storage
-
-        # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, "client"):
-            try:
-                # Use boto3's native presigned URL generation
-                url = storage_adapter.client.generate_presigned_url(
-                    ClientMethod=ClientMethod,
-                    Params=Params,
-                    ExpiresIn=ExpiresIn,
-                )
-                return str(url)
-            except Exception as e:
-                # Fall back to manual URL construction if needed
-                self.service.logger.warning(f"Failed to generate presigned URL: {e}")
+        # Try boto3 first, fallback to manual construction
+        url = self._try_boto3_presigned_operation(
+            "url",
+            ClientMethod=ClientMethod,
+            Params=Params,
+            ExpiresIn=ExpiresIn,
+        )
+        if url is not None:
+            return str(url)
 
         # Fallback: construct URL manually (less secure, for dev/testing only)
         bucket = Params.get("Bucket", "")
@@ -1118,22 +1125,17 @@ class DeltaGliderClient:
         Returns:
             Dict with 'url' and 'fields' for form submission
         """
-        storage_adapter = self.service.storage
-
-        # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, "client"):
-            try:
-                # Use boto3's native presigned POST generation
-                response = storage_adapter.client.generate_presigned_post(
-                    Bucket=Bucket,
-                    Key=Key,
-                    Fields=Fields,
-                    Conditions=Conditions,
-                    ExpiresIn=ExpiresIn,
-                )
-                return dict(response)
-            except Exception as e:
-                self.service.logger.warning(f"Failed to generate presigned POST: {e}")
+        # Try boto3 first, fallback to manual construction
+        response = self._try_boto3_presigned_operation(
+            "post",
+            Bucket=Bucket,
+            Key=Key,
+            Fields=Fields,
+            Conditions=Conditions,
+            ExpiresIn=ExpiresIn,
+        )
+        if response is not None:
+            return dict(response)
 
         # Fallback: return minimal structure for compatibility
         if self.endpoint_url:
