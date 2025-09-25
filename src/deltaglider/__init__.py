@@ -6,14 +6,30 @@ except ImportError:
     # Package is not installed, so version is not available
     __version__ = "0.0.0+unknown"
 
-# Import simplified client API
-from .client import DeltaGliderClient, create_client
+# Import client API
+from .client import (
+    BucketStats,
+    CompressionEstimate,
+    DeltaGliderClient,
+    ListObjectsResponse,
+    ObjectInfo,
+    UploadSummary,
+    create_client,
+)
 from .core import DeltaService, DeltaSpace, ObjectKey
 
 __all__ = [
     "__version__",
+    # Client
     "DeltaGliderClient",
     "create_client",
+    # Data classes
+    "UploadSummary",
+    "CompressionEstimate",
+    "ObjectInfo",
+    "ListObjectsResponse",
+    "BucketStats",
+    # Core classes
     "DeltaService",
     "DeltaSpace",
     "ObjectKey",

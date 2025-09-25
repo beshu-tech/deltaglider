@@ -3,7 +3,7 @@
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Optional
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -50,7 +50,11 @@ class S3StorageAdapter(StoragePort):
             raise
 
     def list(self, prefix: str) -> Iterator[ObjectHead]:
-        """List objects by prefix."""
+        """List objects by prefix (implements StoragePort interface).
+
+        This is a simple iterator for core service compatibility.
+        For advanced S3 features, use list_objects instead.
+        """
         # Handle bucket-only prefix (e.g., "bucket" or "bucket/")
         if "/" not in prefix:
             bucket = prefix
@@ -67,6 +71,73 @@ class S3StorageAdapter(StoragePort):
                 head = self.head(f"{bucket}/{obj['Key']}")
                 if head:
                     yield head
+
+    def list_objects(
+        self,
+        bucket: str,
+        prefix: str = "",
+        delimiter: str = "",
+        max_keys: int = 1000,
+        start_after: str | None = None,
+    ) -> dict[str, Any]:
+        """List objects with S3-compatible response.
+
+        Args:
+            bucket: S3 bucket name
+            prefix: Filter results to keys beginning with prefix
+            delimiter: Delimiter for grouping keys (e.g., '/' for folders)
+            max_keys: Maximum number of keys to return
+            start_after: Start listing after this key
+
+        Returns:
+            Dict with objects, common_prefixes, and pagination info
+        """
+        params: dict[str, Any] = {
+            "Bucket": bucket,
+            "MaxKeys": max_keys,
+        }
+
+        if prefix:
+            params["Prefix"] = prefix
+        if delimiter:
+            params["Delimiter"] = delimiter
+        if start_after:
+            params["StartAfter"] = start_after
+
+        try:
+            response = self.client.list_objects_v2(**params)
+
+            # Process objects
+            objects = []
+            for obj in response.get("Contents", []):
+                objects.append(
+                    {
+                        "key": obj["Key"],
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"].isoformat()
+                        if hasattr(obj["LastModified"], "isoformat")
+                        else str(obj["LastModified"]),
+                        "etag": obj.get("ETag", "").strip('"'),
+                        "storage_class": obj.get("StorageClass", "STANDARD"),
+                    }
+                )
+
+            # Process common prefixes (folders)
+            common_prefixes = []
+            for prefix_info in response.get("CommonPrefixes", []):
+                common_prefixes.append(prefix_info["Prefix"])
+
+            return {
+                "objects": objects,
+                "common_prefixes": common_prefixes,
+                "is_truncated": response.get("IsTruncated", False),
+                "next_continuation_token": response.get("NextContinuationToken"),
+                "key_count": response.get("KeyCount", len(objects)),
+            }
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchBucket":
+                raise FileNotFoundError(f"Bucket not found: {bucket}") from e
+            raise
 
     def get(self, key: str) -> BinaryIO:
         """Get object content as stream."""

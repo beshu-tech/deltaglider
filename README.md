@@ -7,7 +7,7 @@
 [![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](https://github.com/jmacd/xdelta)
 
 <div align="center">
-  <img src="https://github.com/sscarduzio/deltaglider/raw/main/docs/deltaglider.png" alt="DeltaGlider Logo" width="500"/>
+  <img src="https://github.com/beshu-tech/deltaglider/raw/main/docs/deltaglider.png" alt="DeltaGlider Logo" width="500"/>
 </div>
 
 **Store 4TB of similar files in 5GB. No, that's not a typo.**
@@ -193,94 +193,148 @@ deltaglider ls -h s3://backups/
 deltaglider rm -r s3://backups/2023/
 ```
 
-### Python SDK
+### Python SDK - Drop-in boto3 Replacement
 
 **[📚 Full SDK Documentation](docs/sdk/README.md)** | **[API Reference](docs/sdk/api.md)** | **[Examples](docs/sdk/examples.md)**
 
-#### Quick Start
+#### Quick Start - boto3 Compatible API (Recommended)
+
+DeltaGlider provides a **100% boto3-compatible API** that works as a drop-in replacement for AWS S3 SDK:
 
 ```python
-from pathlib import Path
 from deltaglider import create_client
 
-# Uses AWS credentials from environment or ~/.aws/credentials
+# Drop-in replacement for boto3.client('s3')
+client = create_client()  # Uses AWS credentials automatically
+
+# Identical to boto3 S3 API - just works with 99% compression!
+response = client.put_object(
+    Bucket='releases',
+    Key='v2.0.0/my-app.zip',
+    Body=open('my-app-v2.0.0.zip', 'rb')
+)
+print(f"Stored with ETag: {response['ETag']}")
+
+# Standard boto3 get_object - handles delta reconstruction automatically
+response = client.get_object(Bucket='releases', Key='v2.0.0/my-app.zip')
+with open('downloaded.zip', 'wb') as f:
+    f.write(response['Body'].read())
+
+# All boto3 S3 methods supported
+client.list_objects(Bucket='releases', Prefix='v2.0.0/')
+client.delete_object(Bucket='releases', Key='old-version.zip')
+client.head_object(Bucket='releases', Key='v2.0.0/my-app.zip')
+```
+
+#### Simple API (Alternative)
+
+For simpler use cases, DeltaGlider also provides a streamlined API:
+
+```python
+from deltaglider import create_client
+
 client = create_client()
 
-# Upload a file (auto-detects if delta compression should be used)
+# Simple upload with automatic compression detection
 summary = client.upload("my-app-v2.0.0.zip", "s3://releases/v2.0.0/")
 print(f"Compressed from {summary.original_size_mb:.1f}MB to {summary.stored_size_mb:.1f}MB")
 print(f"Saved {summary.savings_percent:.0f}% storage space")
 
-# Download a file (auto-handles delta reconstruction)
+# Simple download with automatic delta reconstruction
 client.download("s3://releases/v2.0.0/my-app-v2.0.0.zip", "local-app.zip")
 ```
 
-#### Real-World Example: Software Release Storage
+#### Real-World Example: Software Release Storage with boto3 API
 
 ```python
 from deltaglider import create_client
 
+# Works exactly like boto3, but with 99% compression!
 client = create_client()
 
-# Upload multiple versions of your software
+# Upload multiple versions using boto3-compatible API
 versions = ["v1.0.0", "v1.0.1", "v1.0.2", "v1.1.0"]
 for version in versions:
-    file = f"dist/my-app-{version}.zip"
-    summary = client.upload(file, f"s3://releases/{version}/")
+    with open(f"dist/my-app-{version}.zip", 'rb') as f:
+        response = client.put_object(
+            Bucket='releases',
+            Key=f'{version}/my-app-{version}.zip',
+            Body=f,
+            Metadata={'version': version, 'build': 'production'}
+        )
 
-    if summary.is_delta:
-        print(f"{version}: Stored as {summary.stored_size_mb:.1f}MB delta "
-              f"(saved {summary.savings_percent:.0f}%)")
-    else:
-        print(f"{version}: Stored as reference ({summary.original_size_mb:.1f}MB)")
+    # Check compression stats (DeltaGlider extension)
+    if 'DeltaGliderInfo' in response:
+        info = response['DeltaGliderInfo']
+        if info.get('IsDelta'):
+            print(f"{version}: Stored as {info['StoredSizeMB']:.1f}MB delta "
+                  f"(saved {info['SavingsPercent']:.0f}%)")
+        else:
+            print(f"{version}: Stored as reference ({info['OriginalSizeMB']:.1f}MB)")
 
 # Result:
 # v1.0.0: Stored as reference (100.0MB)
 # v1.0.1: Stored as 0.2MB delta (saved 99.8%)
 # v1.0.2: Stored as 0.3MB delta (saved 99.7%)
 # v1.1.0: Stored as 5.2MB delta (saved 94.8%)
+
+# Download using standard boto3 API
+response = client.get_object(Bucket='releases', Key='v1.1.0/my-app-v1.1.0.zip')
+with open('my-app-latest.zip', 'wb') as f:
+    f.write(response['Body'].read())
 ```
 
-#### Advanced Example: Automated Backup System
+#### Advanced Example: Automated Backup with boto3 API
 
 ```python
 from datetime import datetime
 from deltaglider import create_client
 
-client = create_client(
-    endpoint_url="http://minio.internal:9000",  # Works with MinIO/R2/etc
-    log_level="INFO"
-)
+# Works with any S3-compatible storage
+client = create_client(endpoint_url="http://minio.internal:9000")
 
 def backup_database():
-    """Daily database backup with automatic deduplication."""
+    """Daily database backup with automatic deduplication using boto3 API."""
     date = datetime.now().strftime("%Y%m%d")
 
     # Create database dump
     dump_file = f"backup-{date}.sql.gz"
 
-    # Upload with delta compression
-    summary = client.upload(
-        dump_file,
-        f"s3://backups/postgres/{date}/",
-        tags={"type": "daily", "database": "production"}
+    # Upload using boto3-compatible API
+    with open(dump_file, 'rb') as f:
+        response = client.put_object(
+            Bucket='backups',
+            Key=f'postgres/{date}/{dump_file}',
+            Body=f,
+            Tagging='type=daily&database=production',
+            Metadata={'date': date, 'source': 'production'}
+        )
+
+    # Check compression effectiveness (DeltaGlider extension)
+    if 'DeltaGliderInfo' in response:
+        info = response['DeltaGliderInfo']
+        if info['DeltaRatio'] > 0.1:  # If delta is >10% of original
+            print(f"Warning: Low compression ({info['SavingsPercent']:.0f}%), "
+                  "database might have significant changes")
+        print(f"Backup stored: {info['StoredSizeMB']:.1f}MB "
+              f"(compressed from {info['OriginalSizeMB']:.1f}MB)")
+
+    # List recent backups using boto3 API
+    response = client.list_objects(
+        Bucket='backups',
+        Prefix='postgres/',
+        MaxKeys=30
     )
 
-    # Monitor compression effectiveness
-    if summary.delta_ratio > 0.1:  # If delta is >10% of original
-        print(f"Warning: Low compression ({summary.savings_percent:.0f}%), "
-              "database might have significant changes")
-
-    # Keep last 30 days, archive older
-    client.lifecycle_policy("s3://backups/postgres/",
-                           days_before_archive=30,
-                           days_before_delete=90)
-
-    return summary
+    # Clean up old backups
+    for obj in response.get('Contents', []):
+        # Parse date from key
+        obj_date = obj['Key'].split('/')[1]
+        if days_old(obj_date) > 30:
+            client.delete_object(Bucket='backups', Key=obj['Key'])
 
 # Run backup
-result = backup_database()
-print(f"Backup complete: {result.stored_size_mb:.1f}MB stored")
+backup_database()
 ```
 
 For more examples and detailed API documentation, see the [SDK Documentation](docs/sdk/README.md).
