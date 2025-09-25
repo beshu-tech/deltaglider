@@ -17,6 +17,7 @@ from ...adapters import (
     XdeltaAdapter,
 )
 from ...core import DeltaService, DeltaSpace, ObjectKey
+from ...ports import MetricsPort
 from .aws_compat import (
     copy_s3_to_s3,
     determine_operation,
@@ -58,6 +59,7 @@ def create_service(
     logger = StdLoggerAdapter(level=log_level)
 
     # Create metrics adapter based on configuration
+    metrics: MetricsPort
     if metrics_type == "cloudwatch":
         # Import here to avoid dependency if not used
         from ...adapters.metrics_cloudwatch import CloudWatchMetricsAdapter

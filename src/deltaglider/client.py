@@ -262,7 +262,7 @@ class DeltaGliderClient:
         MaxKeys: int = 1000,
         ContinuationToken: str | None = None,
         StartAfter: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> ListObjectsResponse:
         """List objects in bucket (boto3-compatible).
 
@@ -452,7 +452,7 @@ class DeltaGliderClient:
                     }
                 )
 
-        response = {"Deleted": deleted}
+        response: dict[str, Any] = {"Deleted": deleted}
         if errors:
             response["Errors"] = errors
 
@@ -913,7 +913,7 @@ class DeltaGliderClient:
             MaxKeys=1000,
         )
 
-        similar = []
+        similar: list[dict[str, Any]] = []
         base_name = Path(filename).stem
         ext = Path(filename).suffix
 
@@ -952,7 +952,7 @@ class DeltaGliderClient:
                 )
 
         # Sort by similarity
-        similar.sort(key=lambda x: x.get("Similarity", 0), reverse=True)
+        similar.sort(key=lambda x: x["Similarity"], reverse=True)  # type: ignore
 
         return similar[:limit]
 
@@ -1080,7 +1080,7 @@ class DeltaGliderClient:
                     Params=Params,
                     ExpiresIn=ExpiresIn,
                 )
-                return url
+                return str(url)
             except Exception as e:
                 # Fall back to manual URL construction if needed
                 self.service.logger.warning(f"Failed to generate presigned URL: {e}")
@@ -1131,7 +1131,7 @@ class DeltaGliderClient:
                     Conditions=Conditions,
                     ExpiresIn=ExpiresIn,
                 )
-                return response
+                return dict(response)
             except Exception as e:
                 self.service.logger.warning(f"Failed to generate presigned POST: {e}")
 
