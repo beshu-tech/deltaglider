@@ -13,7 +13,7 @@ maintainers = [
     {name = "Beshu Tech Team", email = "info@beshu.tech"},
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.11"
 keywords = [
     "s3",
@@ -115,8 +115,6 @@ dev-dependencies = [
 [tool.setuptools_scm]
 # Automatically determine version from git tags
 write_to = "src/deltaglider/_version.py"
-version_scheme = "release-branch-semver"
-local_scheme = "no-local-version"
 
 [tool.ruff]
 target-version = "py311"
