@@ -206,10 +206,7 @@ class TestBoto3Compatibility:
         assert len(response.contents) > 0
 
         # Test with FetchMetadata=True (should only affect delta files)
-        response_with_metadata = client.list_objects(
-            Bucket="test-bucket",
-            FetchMetadata=True
-        )
+        response_with_metadata = client.list_objects(Bucket="test-bucket", FetchMetadata=True)
         assert isinstance(response_with_metadata, ListObjectsResponse)
         assert response_with_metadata.key_count > 0
 
