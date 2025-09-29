@@ -1,6 +1,7 @@
 """Focused tests for recursive delete reference cleanup functionality."""
 
 from unittest.mock import Mock, patch
+
 import pytest
 
 from deltaglider.app.cli.main import create_service
@@ -161,6 +162,7 @@ class TestRecursiveDeleteReferenceCleanup:
     def test_cli_uses_core_service_method(self):
         """Test that CLI rm -r command uses the core service delete_recursive method."""
         from click.testing import CliRunner
+
         from deltaglider.app.cli.main import cli
 
         runner = CliRunner()
@@ -188,6 +190,7 @@ class TestRecursiveDeleteReferenceCleanup:
     def test_cli_dryrun_does_not_call_delete_recursive(self):
         """Test that CLI dryrun does not call the actual delete_recursive method."""
         from click.testing import CliRunner
+
         from deltaglider.app.cli.main import cli
 
         runner = CliRunner()
@@ -232,7 +235,7 @@ class TestRecursiveDeleteReferenceCleanup:
         from deltaglider.core import ObjectKey
         result = service.delete(ObjectKey(bucket="test-bucket", key="test/file.zip.delta"))
 
-        assert result["deleted"] == True
+        assert result["deleted"]
         assert result["type"] == "delta"
 
     def test_reference_cleanup_intelligence_basic(self):
