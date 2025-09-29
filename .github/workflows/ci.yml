@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main, develop]
-    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -143,28 +142,3 @@ jobs:
         run: |
           uv run pytest tests/e2e -v --tb=short
 
-  pypi-publish:
-    needs: [lint, typecheck, test, e2e-test]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install UV
-        run: |
-          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Build package
-        run: |
-          uv build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}

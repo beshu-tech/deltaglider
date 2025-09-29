@@ -1,0 +1,253 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.3.2)'
+        required: true
+        type: string
+      pypi_environment:
+        description: 'PyPI environment'
+        required: true
+        type: choice
+        options:
+          - 'pypi'
+          - 'testpypi'
+        default: 'pypi'
+
+env:
+  UV_VERSION: "0.5.13"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  validate-and-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.create_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          if ! echo "${{ github.event.inputs.version }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
+            echo "Error: Version must be in format X.Y.Z or X.Y.Z-suffix"
+            exit 1
+          fi
+
+      - name: Check if tag already exists
+        run: |
+          if git rev-parse "v${{ github.event.inputs.version }}" >/dev/null 2>&1; then
+            echo "Error: Tag v${{ github.event.inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Create and push tag
+        id: create_tag
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
+          git push origin "v${{ github.event.inputs.version }}"
+          echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+
+  lint:
+    needs: validate-and-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+
+      - name: Run ruff check
+        run: |
+          uv run ruff check src tests
+
+      - name: Run ruff format check
+        run: |
+          uv run ruff format --check src tests
+
+  typecheck:
+    needs: validate-and-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+
+      - name: Run mypy
+        run: |
+          uv run mypy src
+
+  test:
+    needs: validate-and-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install xdelta3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xdelta3
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+
+      - name: Run unit tests
+        run: |
+          uv run pytest tests/unit -v --tb=short
+
+      - name: Run integration tests
+        run: |
+          uv run pytest tests/integration -v --tb=short
+
+  e2e-test:
+    needs: validate-and-tag
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3
+          DEBUG: 0
+          DATA_DIR: /tmp/localstack/data
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install xdelta3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xdelta3
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+
+      - name: Run E2E tests
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ENDPOINT_URL: http://localhost:4566
+        run: |
+          uv run pytest tests/e2e -v --tb=short
+
+  publish:
+    needs: [validate-and-tag, lint, typecheck, test, e2e-test]
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.pypi_environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+          fetch-depth: 0  # Important for setuptools-scm
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/${{ env.UV_VERSION }}/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Publish to TestPyPI
+        if: github.event.inputs.pypi_environment == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+      - name: Publish to PyPI
+        if: github.event.inputs.pypi_environment == 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.validate-and-tag.outputs.tag_name }}
+          name: Release v${{ github.event.inputs.version }}
+          body: |
+            ## DeltaGlider v${{ github.event.inputs.version }}
+
+            Published to ${{ github.event.inputs.pypi_environment == 'pypi' && 'PyPI' || 'TestPyPI' }}
+
+            ### Installation
+            ```bash
+            pip install deltaglider==${{ github.event.inputs.version }}
+            ```
+          draft: false
+          prerelease: ${{ contains(github.event.inputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
