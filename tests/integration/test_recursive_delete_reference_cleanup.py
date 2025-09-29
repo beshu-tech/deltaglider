@@ -14,7 +14,7 @@ class TestRecursiveDeleteReferenceCleanup:
     def test_core_service_delete_recursive_method_exists(self):
         """Test that the core service has the delete_recursive method."""
         service = create_service()
-        assert hasattr(service, 'delete_recursive')
+        assert hasattr(service, "delete_recursive")
         assert callable(service.delete_recursive)
 
     def test_delete_recursive_handles_empty_prefix(self):
@@ -41,8 +41,16 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Mock some objects
         mock_storage.list.return_value = [
-            ObjectHead(key="test/file1.zip.delta", size=100, etag="1", last_modified=None, metadata={}),
-            ObjectHead(key="test/file2.txt", size=200, etag="2", last_modified=None, metadata={"compression": "none"}),
+            ObjectHead(
+                key="test/file1.zip.delta", size=100, etag="1", last_modified=None, metadata={}
+            ),
+            ObjectHead(
+                key="test/file2.txt",
+                size=200,
+                etag="2",
+                last_modified=None,
+                metadata={"compression": "none"},
+            ),
         ]
         mock_storage.head.return_value = None
         mock_storage.delete.return_value = None
@@ -51,9 +59,16 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Verify structure
         required_keys = [
-            "bucket", "prefix", "deleted_count", "failed_count",
-            "deltas_deleted", "references_deleted", "direct_deleted",
-            "other_deleted", "errors", "warnings"
+            "bucket",
+            "prefix",
+            "deleted_count",
+            "failed_count",
+            "deltas_deleted",
+            "references_deleted",
+            "direct_deleted",
+            "other_deleted",
+            "errors",
+            "warnings",
         ]
         for key in required_keys:
             assert key in result, f"Missing key: {key}"
@@ -71,12 +86,27 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Mock different types of objects
         mock_objects = [
-            ObjectHead(key="test/app.zip.delta", size=100, etag="1", last_modified=None,
-                      metadata={"ref_key": "test/reference.bin"}),
-            ObjectHead(key="test/reference.bin", size=50, etag="2", last_modified=None,
-                      metadata={"file_sha256": "abc123"}),
-            ObjectHead(key="test/readme.txt", size=200, etag="3", last_modified=None,
-                      metadata={"compression": "none"}),
+            ObjectHead(
+                key="test/app.zip.delta",
+                size=100,
+                etag="1",
+                last_modified=None,
+                metadata={"ref_key": "test/reference.bin"},
+            ),
+            ObjectHead(
+                key="test/reference.bin",
+                size=50,
+                etag="2",
+                last_modified=None,
+                metadata={"file_sha256": "abc123"},
+            ),
+            ObjectHead(
+                key="test/readme.txt",
+                size=200,
+                etag="3",
+                last_modified=None,
+                metadata={"compression": "none"},
+            ),
             ObjectHead(key="test/config.json", size=300, etag="4", last_modified=None, metadata={}),
         ]
 
@@ -87,11 +117,11 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "test/")
 
         # Should categorize correctly - the exact categorization depends on implementation
-        assert result["deltas_deleted"] == 1    # app.zip.delta
+        assert result["deltas_deleted"] == 1  # app.zip.delta
         assert result["references_deleted"] == 1  # reference.bin
         # Direct and other files may be categorized differently based on metadata detection
         assert result["direct_deleted"] + result["other_deleted"] == 2  # readme.txt + config.json
-        assert result["deleted_count"] == 4     # total
+        assert result["deleted_count"] == 4  # total
         assert result["failed_count"] == 0
 
     def test_delete_recursive_handles_storage_errors_gracefully(self):
@@ -102,8 +132,12 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Mock objects
         mock_storage.list.return_value = [
-            ObjectHead(key="test/good.zip.delta", size=100, etag="1", last_modified=None, metadata={}),
-            ObjectHead(key="test/bad.zip.delta", size=200, etag="2", last_modified=None, metadata={}),
+            ObjectHead(
+                key="test/good.zip.delta", size=100, etag="1", last_modified=None, metadata={}
+            ),
+            ObjectHead(
+                key="test/bad.zip.delta", size=200, etag="2", last_modified=None, metadata={}
+            ),
         ]
         mock_storage.head.return_value = None
 
@@ -117,8 +151,8 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "test/")
 
         # Should handle partial failure
-        assert result["deleted_count"] == 1     # good.zip.delta succeeded
-        assert result["failed_count"] == 1      # bad.zip.delta failed
+        assert result["deleted_count"] == 1  # good.zip.delta succeeded
+        assert result["failed_count"] == 1  # bad.zip.delta failed
         assert len(result["errors"]) == 1
         assert "bad" in result["errors"][0]
 
@@ -130,12 +164,18 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Create delta files that should trigger parent reference checking
         mock_objects = [
-            ObjectHead(key="project/team-a/v1/app.zip.delta", size=100, etag="1",
-                      last_modified=None, metadata={"ref_key": "project/reference.bin"}),
+            ObjectHead(
+                key="project/team-a/v1/app.zip.delta",
+                size=100,
+                etag="1",
+                last_modified=None,
+                metadata={"ref_key": "project/reference.bin"},
+            ),
         ]
 
         # Mock list to return objects for initial scan, then parent reference when checked
         list_calls = []
+
         def mock_list(prefix):
             list_calls.append(prefix)
             if prefix == "test-bucket/project/team-a/v1/":
@@ -143,14 +183,24 @@ class TestRecursiveDeleteReferenceCleanup:
             elif prefix == "test-bucket/project":
                 # Return parent reference when checking deltaspace
                 return [
-                    ObjectHead(key="project/reference.bin", size=50, etag="ref",
-                              last_modified=None, metadata={"file_sha256": "abc123"})
+                    ObjectHead(
+                        key="project/reference.bin",
+                        size=50,
+                        etag="ref",
+                        last_modified=None,
+                        metadata={"file_sha256": "abc123"},
+                    )
                 ]
             return []
 
         mock_storage.list.side_effect = mock_list
-        mock_storage.head.return_value = ObjectHead(key="project/reference.bin", size=50, etag="ref",
-                                                   last_modified=None, metadata={"file_sha256": "abc123"})
+        mock_storage.head.return_value = ObjectHead(
+            key="project/reference.bin",
+            size=50,
+            etag="ref",
+            last_modified=None,
+            metadata={"file_sha256": "abc123"},
+        )
         mock_storage.delete.return_value = None
 
         result = service.delete_recursive("test-bucket", "project/team-a/v1/")
@@ -167,7 +217,7 @@ class TestRecursiveDeleteReferenceCleanup:
 
         runner = CliRunner()
 
-        with patch('deltaglider.app.cli.main.create_service') as mock_create_service:
+        with patch("deltaglider.app.cli.main.create_service") as mock_create_service:
             mock_service = Mock()
             mock_create_service.return_value = mock_service
 
@@ -178,7 +228,7 @@ class TestRecursiveDeleteReferenceCleanup:
                 "deleted_count": 2,
                 "failed_count": 0,
                 "warnings": [],
-                "errors": []
+                "errors": [],
             }
 
             result = runner.invoke(cli, ["rm", "-r", "s3://test-bucket/test/"])
@@ -195,14 +245,18 @@ class TestRecursiveDeleteReferenceCleanup:
 
         runner = CliRunner()
 
-        with patch('deltaglider.app.cli.main.create_service') as mock_create_service:
+        with patch("deltaglider.app.cli.main.create_service") as mock_create_service:
             mock_service = Mock()
             mock_create_service.return_value = mock_service
 
             # Mock list for dryrun preview
             mock_service.storage.list.return_value = [
-                ObjectHead(key="test/file1.zip.delta", size=100, etag="1", last_modified=None, metadata={}),
-                ObjectHead(key="test/file2.txt", size=200, etag="2", last_modified=None, metadata={}),
+                ObjectHead(
+                    key="test/file1.zip.delta", size=100, etag="1", last_modified=None, metadata={}
+                ),
+                ObjectHead(
+                    key="test/file2.txt", size=200, etag="2", last_modified=None, metadata={}
+                ),
             ]
 
             result = runner.invoke(cli, ["rm", "-r", "--dryrun", "s3://test-bucket/test/"])
@@ -219,20 +273,24 @@ class TestRecursiveDeleteReferenceCleanup:
         service.storage = mock_storage
 
         # Test that both methods exist and are callable
-        assert hasattr(service, 'delete')
-        assert hasattr(service, 'delete_recursive')
+        assert hasattr(service, "delete")
+        assert hasattr(service, "delete_recursive")
         assert callable(service.delete)
         assert callable(service.delete_recursive)
 
         # Mock for single delete
         mock_storage.head.return_value = ObjectHead(
-            key="test/file.zip.delta", size=100, etag="1",
-            last_modified=None, metadata={"original_name": "file.zip"}
+            key="test/file.zip.delta",
+            size=100,
+            etag="1",
+            last_modified=None,
+            metadata={"original_name": "file.zip"},
         )
         mock_storage.delete.return_value = None
 
         # Test single delete
         from deltaglider.core import ObjectKey
+
         result = service.delete(ObjectKey(bucket="test-bucket", key="test/file.zip.delta"))
 
         assert result["deleted"]
@@ -246,10 +304,20 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Simple scenario: one delta and its reference
         mock_objects = [
-            ObjectHead(key="simple/file.zip.delta", size=100, etag="1",
-                      last_modified=None, metadata={"ref_key": "simple/reference.bin"}),
-            ObjectHead(key="simple/reference.bin", size=50, etag="2",
-                      last_modified=None, metadata={"file_sha256": "abc123"}),
+            ObjectHead(
+                key="simple/file.zip.delta",
+                size=100,
+                etag="1",
+                last_modified=None,
+                metadata={"ref_key": "simple/reference.bin"},
+            ),
+            ObjectHead(
+                key="simple/reference.bin",
+                size=50,
+                etag="2",
+                last_modified=None,
+                metadata={"file_sha256": "abc123"},
+            ),
         ]
 
         mock_storage.list.return_value = mock_objects
@@ -272,11 +340,22 @@ class TestRecursiveDeleteReferenceCleanup:
 
         # Mix of different object types
         mock_objects = [
-            ObjectHead(key="mixed/app.zip.delta", size=100, etag="1", last_modified=None, metadata={}),
-            ObjectHead(key="mixed/reference.bin", size=50, etag="2", last_modified=None, metadata={}),
-            ObjectHead(key="mixed/readme.txt", size=200, etag="3", last_modified=None,
-                      metadata={"compression": "none"}),
-            ObjectHead(key="mixed/config.json", size=300, etag="4", last_modified=None, metadata={}),
+            ObjectHead(
+                key="mixed/app.zip.delta", size=100, etag="1", last_modified=None, metadata={}
+            ),
+            ObjectHead(
+                key="mixed/reference.bin", size=50, etag="2", last_modified=None, metadata={}
+            ),
+            ObjectHead(
+                key="mixed/readme.txt",
+                size=200,
+                etag="3",
+                last_modified=None,
+                metadata={"compression": "none"},
+            ),
+            ObjectHead(
+                key="mixed/config.json", size=300, etag="4", last_modified=None, metadata={}
+            ),
         ]
 
         mock_storage.list.return_value = mock_objects
@@ -298,8 +377,12 @@ class TestRecursiveDeleteReferenceCleanup:
         assert isinstance(result["warnings"], list)
 
         # Validate counts add up
-        total_by_type = (result["deltas_deleted"] + result["references_deleted"] +
-                        result["direct_deleted"] + result["other_deleted"])
+        total_by_type = (
+            result["deltas_deleted"]
+            + result["references_deleted"]
+            + result["direct_deleted"]
+            + result["other_deleted"]
+        )
         assert result["deleted_count"] == total_by_type
 
         # Validate specific counts for this scenario
