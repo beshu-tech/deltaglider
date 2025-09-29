@@ -33,7 +33,22 @@ client = create_client()
 # Standard boto3 S3 methods - just work!
 client.put_object(Bucket='releases', Key='v1.0.0/app.zip', Body=data)
 response = client.get_object(Bucket='releases', Key='v1.0.0/app.zip')
-client.list_objects(Bucket='releases', Prefix='v1.0.0/')
+
+# Optimized list_objects with smart performance defaults (NEW!)
+# Fast by default - no unnecessary metadata fetching
+response = client.list_objects(Bucket='releases', Prefix='v1.0.0/')
+
+# Pagination for large buckets
+response = client.list_objects(Bucket='releases', MaxKeys=100,
+                              ContinuationToken=response.next_continuation_token)
+
+# Get detailed compression stats only when needed
+response = client.list_objects(Bucket='releases', FetchMetadata=True)  # Slower but detailed
+
+# Quick bucket statistics
+stats = client.get_bucket_stats('releases')  # Fast overview
+stats = client.get_bucket_stats('releases', detailed_stats=True)  # With compression metrics
+
 client.delete_object(Bucket='releases', Key='old-version.zip')
 ```
 

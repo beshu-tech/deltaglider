@@ -198,12 +198,20 @@ class TestBoto3Compatibility:
 
     def test_list_objects(self, client):
         """Test list_objects with various options."""
-        # List all objects
+        # List all objects (default: FetchMetadata=False)
         response = client.list_objects(Bucket="test-bucket")
 
         assert isinstance(response, ListObjectsResponse)
         assert response.key_count > 0
         assert len(response.contents) > 0
+
+        # Test with FetchMetadata=True (should only affect delta files)
+        response_with_metadata = client.list_objects(
+            Bucket="test-bucket",
+            FetchMetadata=True
+        )
+        assert isinstance(response_with_metadata, ListObjectsResponse)
+        assert response_with_metadata.key_count > 0
 
     def test_list_objects_with_delimiter(self, client):
         """Test list_objects with delimiter for folder simulation."""
@@ -325,12 +333,18 @@ class TestDeltaGliderFeatures:
 
     def test_get_bucket_stats(self, client):
         """Test getting bucket statistics."""
+        # Test quick stats (default: detailed_stats=False)
         stats = client.get_bucket_stats("test-bucket")
 
         assert isinstance(stats, BucketStats)
         assert stats.object_count > 0
         assert stats.total_size > 0
         assert stats.delta_objects >= 1  # We have archive.zip.delta
+
+        # Test with detailed_stats=True
+        detailed_stats = client.get_bucket_stats("test-bucket", detailed_stats=True)
+        assert isinstance(detailed_stats, BucketStats)
+        assert detailed_stats.object_count == stats.object_count
 
     def test_upload_chunked(self, client, tmp_path):
         """Test chunked upload with progress callback."""

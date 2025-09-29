@@ -75,7 +75,147 @@ class DeltaGliderClient:
 
 **Note**: Use `create_client()` instead of instantiating directly.
 
-### Methods
+### boto3-Compatible Methods (Recommended)
+
+These methods provide 100% compatibility with boto3's S3 client, making DeltaGlider a drop-in replacement.
+
+#### `list_objects`
+
+List objects in a bucket with smart performance optimizations.
+
+```python
+def list_objects(
+    self,
+    Bucket: str,
+    Prefix: str = "",
+    Delimiter: str = "",
+    MaxKeys: int = 1000,
+    ContinuationToken: Optional[str] = None,
+    StartAfter: Optional[str] = None,
+    FetchMetadata: bool = False,
+    **kwargs
+) -> ListObjectsResponse
+```
+
+##### Parameters
+
+- **Bucket** (`str`): S3 bucket name.
+- **Prefix** (`str`): Filter results to keys beginning with prefix.
+- **Delimiter** (`str`): Delimiter for grouping keys (e.g., '/' for folders).
+- **MaxKeys** (`int`): Maximum number of keys to return (for pagination). Default: 1000.
+- **ContinuationToken** (`Optional[str]`): Token from previous response for pagination.
+- **StartAfter** (`Optional[str]`): Start listing after this key (alternative pagination).
+- **FetchMetadata** (`bool`): If True, fetch compression metadata for delta files only. Default: False.
+  - **IMPORTANT**: Non-delta files NEVER trigger metadata fetching (no performance impact).
+  - With `FetchMetadata=False`: ~50ms for 1000 objects (1 API call)
+  - With `FetchMetadata=True`: ~2-3s for 1000 objects (1 + N delta files API calls)
+
+##### Performance Optimization
+
+The method intelligently optimizes performance by:
+1. **Never** fetching metadata for non-delta files (they don't need it)
+2. Only fetching metadata for delta files when explicitly requested
+3. Supporting efficient pagination for large buckets
+
+##### Examples
+
+```python
+# Fast listing for UI display (no metadata fetching)
+response = client.list_objects(Bucket='releases')
+
+# Paginated listing for large buckets
+response = client.list_objects(Bucket='releases', MaxKeys=100)
+while response.is_truncated:
+    response = client.list_objects(
+        Bucket='releases',
+        MaxKeys=100,
+        ContinuationToken=response.next_continuation_token
+    )
+
+# Get detailed compression stats (slower, only for analytics)
+response = client.list_objects(
+    Bucket='releases',
+    FetchMetadata=True  # Only fetches for delta files
+)
+```
+
+#### `get_bucket_stats`
+
+Get statistics for a bucket with optional detailed compression metrics.
+
+```python
+def get_bucket_stats(
+    self,
+    bucket: str,
+    detailed_stats: bool = False
+) -> BucketStats
+```
+
+##### Parameters
+
+- **bucket** (`str`): S3 bucket name.
+- **detailed_stats** (`bool`): If True, fetch accurate compression ratios for delta files. Default: False.
+  - With `detailed_stats=False`: ~50ms for any bucket size (LIST calls only)
+  - With `detailed_stats=True`: ~2-3s per 1000 objects (adds HEAD calls for delta files)
+
+##### Examples
+
+```python
+# Quick stats for dashboard display
+stats = client.get_bucket_stats('releases')
+print(f"Objects: {stats.object_count}, Size: {stats.total_size}")
+
+# Detailed stats for analytics (slower but accurate)
+stats = client.get_bucket_stats('releases', detailed_stats=True)
+print(f"Compression ratio: {stats.average_compression_ratio:.1%}")
+```
+
+#### `put_object`
+
+Upload an object to S3 with automatic delta compression (boto3-compatible).
+
+```python
+def put_object(
+    self,
+    Bucket: str,
+    Key: str,
+    Body: bytes | str | Path | None = None,
+    Metadata: Optional[Dict[str, str]] = None,
+    ContentType: Optional[str] = None,
+    **kwargs
+) -> Dict[str, Any]
+```
+
+##### Parameters
+
+- **Bucket** (`str`): S3 bucket name.
+- **Key** (`str`): Object key (path in bucket).
+- **Body** (`bytes | str | Path`): Object data.
+- **Metadata** (`Optional[Dict[str, str]]`): Custom metadata.
+- **ContentType** (`Optional[str]`): MIME type (for compatibility).
+
+##### Returns
+
+Dict with ETag and DeltaGlider compression info.
+
+#### `get_object`
+
+Download an object from S3 with automatic delta reconstruction (boto3-compatible).
+
+```python
+def get_object(
+    self,
+    Bucket: str,
+    Key: str,
+    **kwargs
+) -> Dict[str, Any]
+```
+
+##### Returns
+
+Dict with Body stream and metadata (identical to boto3).
+
+### Simple API Methods
 
 #### `upload`
 

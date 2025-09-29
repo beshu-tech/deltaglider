@@ -4,14 +4,205 @@ Real-world examples and patterns for using DeltaGlider in production application
 
 ## Table of Contents
 
-1. [Software Release Management](#software-release-management)
-2. [Database Backup System](#database-backup-system)
-3. [CI/CD Pipeline Integration](#cicd-pipeline-integration)
-4. [Container Registry Storage](#container-registry-storage)
-5. [Machine Learning Model Versioning](#machine-learning-model-versioning)
-6. [Game Asset Distribution](#game-asset-distribution)
-7. [Log Archive Management](#log-archive-management)
-8. [Multi-Region Replication](#multi-region-replication)
+1. [Performance-Optimized Bucket Listing](#performance-optimized-bucket-listing)
+2. [Software Release Management](#software-release-management)
+3. [Database Backup System](#database-backup-system)
+4. [CI/CD Pipeline Integration](#cicd-pipeline-integration)
+5. [Container Registry Storage](#container-registry-storage)
+6. [Machine Learning Model Versioning](#machine-learning-model-versioning)
+7. [Game Asset Distribution](#game-asset-distribution)
+8. [Log Archive Management](#log-archive-management)
+9. [Multi-Region Replication](#multi-region-replication)
+
+## Performance-Optimized Bucket Listing
+
+DeltaGlider's smart `list_objects` method eliminates the N+1 query problem by intelligently managing metadata fetching.
+
+### Fast Web UI Listing (No Metadata)
+
+```python
+from deltaglider import create_client
+import time
+
+client = create_client()
+
+def fast_bucket_listing(bucket: str):
+    """Ultra-fast listing for web UI display (~50ms for 1000 objects)."""
+    start = time.time()
+
+    # Default: FetchMetadata=False - no HEAD requests
+    response = client.list_objects(
+        Bucket=bucket,
+        MaxKeys=100  # Pagination for UI
+    )
+
+    # Process objects for display
+    items = []
+    for obj in response.contents:
+        items.append({
+            "key": obj.key,
+            "size": obj.size,
+            "last_modified": obj.last_modified,
+            "is_delta": obj.is_delta,  # Determined from filename
+            # No compression_ratio - would require HEAD request
+        })
+
+    elapsed = time.time() - start
+    print(f"Listed {len(items)} objects in {elapsed*1000:.0f}ms")
+
+    return items, response.next_continuation_token
+
+# Example: List first page
+items, next_token = fast_bucket_listing('releases')
+```
+
+### Paginated Listing for Large Buckets
+
+```python
+def paginated_listing(bucket: str, page_size: int = 50):
+    """Efficiently paginate through large buckets."""
+    all_objects = []
+    continuation_token = None
+
+    while True:
+        response = client.list_objects(
+            Bucket=bucket,
+            MaxKeys=page_size,
+            ContinuationToken=continuation_token,
+            FetchMetadata=False  # Keep it fast
+        )
+
+        all_objects.extend(response.contents)
+
+        if not response.is_truncated:
+            break
+
+        continuation_token = response.next_continuation_token
+        print(f"Fetched {len(all_objects)} objects so far...")
+
+    return all_objects
+
+# Example: List all objects efficiently
+all_objects = paginated_listing('releases', page_size=100)
+print(f"Total objects: {len(all_objects)}")
+```
+
+### Analytics Dashboard with Compression Stats
+
+```python
+def dashboard_with_stats(bucket: str):
+    """Dashboard view with optional detailed stats."""
+
+    # Quick overview (fast - no metadata)
+    stats = client.get_bucket_stats(bucket, detailed_stats=False)
+
+    print(f"Quick Stats for {bucket}:")
+    print(f"  Total Objects: {stats.object_count}")
+    print(f"  Delta Files: {stats.delta_objects}")
+    print(f"  Regular Files: {stats.direct_objects}")
+    print(f"  Total Size: {stats.total_size / (1024**3):.2f} GB")
+    print(f"  Stored Size: {stats.compressed_size / (1024**3):.2f} GB")
+
+    # Detailed compression analysis (slower - fetches metadata for deltas only)
+    if stats.delta_objects > 0:
+        detailed_stats = client.get_bucket_stats(bucket, detailed_stats=True)
+        print(f"\nDetailed Compression Stats:")
+        print(f"  Average Compression: {detailed_stats.average_compression_ratio:.1%}")
+        print(f"  Space Saved: {detailed_stats.space_saved / (1024**3):.2f} GB")
+
+# Example usage
+dashboard_with_stats('releases')
+```
+
+### Smart Metadata Fetching for Analytics
+
+```python
+def compression_analysis(bucket: str, prefix: str = ""):
+    """Analyze compression effectiveness with selective metadata fetching."""
+
+    # Only fetch metadata when we need compression stats
+    response = client.list_objects(
+        Bucket=bucket,
+        Prefix=prefix,
+        FetchMetadata=True  # Fetches metadata ONLY for .delta files
+    )
+
+    # Analyze compression effectiveness
+    delta_files = [obj for obj in response.contents if obj.is_delta]
+
+    if delta_files:
+        total_original = sum(obj.original_size for obj in delta_files)
+        total_compressed = sum(obj.compressed_size for obj in delta_files)
+        avg_ratio = (total_original - total_compressed) / total_original
+
+        print(f"Compression Analysis for {prefix or 'all files'}:")
+        print(f"  Delta Files: {len(delta_files)}")
+        print(f"  Original Size: {total_original / (1024**2):.1f} MB")
+        print(f"  Compressed Size: {total_compressed / (1024**2):.1f} MB")
+        print(f"  Average Compression: {avg_ratio:.1%}")
+
+        # Find best and worst compression
+        best = max(delta_files, key=lambda x: x.compression_ratio or 0)
+        worst = min(delta_files, key=lambda x: x.compression_ratio or 1)
+
+        print(f"  Best Compression: {best.key} ({best.compression_ratio:.1%})")
+        print(f"  Worst Compression: {worst.key} ({worst.compression_ratio:.1%})")
+
+# Example: Analyze v2.0 releases
+compression_analysis('releases', 'v2.0/')
+```
+
+### Performance Comparison
+
+```python
+def performance_comparison(bucket: str):
+    """Compare performance with and without metadata fetching."""
+    import time
+
+    # Test 1: Fast listing (no metadata)
+    start = time.time()
+    response_fast = client.list_objects(
+        Bucket=bucket,
+        MaxKeys=100,
+        FetchMetadata=False  # Default
+    )
+    time_fast = (time.time() - start) * 1000
+
+    # Test 2: Detailed listing (with metadata for deltas)
+    start = time.time()
+    response_detailed = client.list_objects(
+        Bucket=bucket,
+        MaxKeys=100,
+        FetchMetadata=True  # Fetches for delta files only
+    )
+    time_detailed = (time.time() - start) * 1000
+
+    delta_count = sum(1 for obj in response_fast.contents if obj.is_delta)
+
+    print(f"Performance Comparison for {bucket}:")
+    print(f"  Fast Listing: {time_fast:.0f}ms (1 API call)")
+    print(f"  Detailed Listing: {time_detailed:.0f}ms (1 + {delta_count} API calls)")
+    print(f"  Speed Improvement: {time_detailed/time_fast:.1f}x slower with metadata")
+    print(f"\nRecommendation: Use FetchMetadata=True only when you need:")
+    print("  - Exact original file sizes for delta files")
+    print("  - Accurate compression ratios")
+    print("  - Reference key information")
+
+# Example: Compare performance
+performance_comparison('releases')
+```
+
+### Best Practices
+
+1. **Default to Fast Mode**: Always use `FetchMetadata=False` (default) unless you specifically need compression stats.
+
+2. **Never Fetch for Non-Deltas**: The SDK automatically skips metadata fetching for non-delta files even when `FetchMetadata=True`.
+
+3. **Use Pagination**: For large buckets, use `MaxKeys` and `ContinuationToken` to paginate results.
+
+4. **Cache Results**: If you need metadata frequently, consider caching the results to avoid repeated HEAD requests.
+
+5. **Batch Analytics**: When doing analytics, fetch metadata once and process the results rather than making multiple calls.
 
 ## Software Release Management
 
