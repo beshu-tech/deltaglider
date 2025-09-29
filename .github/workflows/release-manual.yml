@@ -1,10 +1,10 @@
-name: Manual Release
+name: Manual Release (Simple)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.3.2)'
+        description: 'Version to release (e.g., 0.3.2) - make sure tag v0.3.2 exists!'
         required: true
         type: string
       pypi_environment:
@@ -21,15 +21,14 @@ env:
   PYTHON_VERSION: "3.12"
 
 jobs:
-  validate-and-tag:
+  validate:
     runs-on: ubuntu-latest
     outputs:
-      tag_name: ${{ steps.create_tag.outputs.tag }}
+      tag_name: ${{ steps.validate_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Validate version format
         run: |
@@ -38,29 +37,26 @@ jobs:
             exit 1
           fi
 
-      - name: Check if tag already exists
+      - name: Check if tag exists
+        id: validate_tag
         run: |
-          if git rev-parse "v${{ github.event.inputs.version }}" >/dev/null 2>&1; then
-            echo "Error: Tag v${{ github.event.inputs.version }} already exists"
+          TAG="v${{ github.event.inputs.version }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Error: Tag $TAG does not exist!"
+            echo "Please create it first with:"
+            echo "  git tag $TAG"
+            echo "  git push origin $TAG"
             exit 1
           fi
-
-      - name: Create and push tag
-        id: create_tag
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
-          git push origin "v${{ github.event.inputs.version }}"
-          echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
   lint:
-    needs: validate-and-tag
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+          ref: ${{ needs.validate.outputs.tag_name }}
 
       - name: Install UV
         run: |
@@ -85,12 +81,12 @@ jobs:
           uv run ruff format --check src tests
 
   typecheck:
-    needs: validate-and-tag
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+          ref: ${{ needs.validate.outputs.tag_name }}
 
       - name: Install UV
         run: |
@@ -111,12 +107,12 @@ jobs:
           uv run mypy src
 
   test:
-    needs: validate-and-tag
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+          ref: ${{ needs.validate.outputs.tag_name }}
 
       - name: Install UV
         run: |
@@ -146,7 +142,7 @@ jobs:
           uv run pytest tests/integration -v --tb=short
 
   e2e-test:
-    needs: validate-and-tag
+    needs: validate
     runs-on: ubuntu-latest
     services:
       localstack:
@@ -166,7 +162,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+          ref: ${{ needs.validate.outputs.tag_name }}
 
       - name: Install UV
         run: |
@@ -197,13 +193,13 @@ jobs:
           uv run pytest tests/e2e -v --tb=short
 
   publish:
-    needs: [validate-and-tag, lint, typecheck, test, e2e-test]
+    needs: [validate, lint, typecheck, test, e2e-test]
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.pypi_environment }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-and-tag.outputs.tag_name }}
+          ref: ${{ needs.validate.outputs.tag_name }}
           fetch-depth: 0  # Important for setuptools-scm
 
       - name: Install UV
@@ -236,7 +232,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ needs.validate-and-tag.outputs.tag_name }}
+          tag_name: ${{ needs.validate.outputs.tag_name }}
           name: Release v${{ github.event.inputs.version }}
           body: |
             ## DeltaGlider v${{ github.event.inputs.version }}
