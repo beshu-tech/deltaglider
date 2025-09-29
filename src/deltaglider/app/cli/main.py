@@ -433,7 +433,9 @@ def rm(
                         # Show warnings if any references were kept
                         for warning in result.get("warnings", []):
                             if "Kept reference" in warning:
-                                click.echo(f"Keeping reference file (still in use): s3://{bucket}/{warning.split()[2]}")
+                                click.echo(
+                                    f"Keeping reference file (still in use): s3://{bucket}/{warning.split()[2]}"
+                                )
 
                 # Report any errors
                 if result["failed_count"] > 0:

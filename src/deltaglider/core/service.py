@@ -797,7 +797,9 @@ class DeltaService:
 
                 # Check if there are any remaining files in this deltaspace
                 # (outside of the deletion prefix)
-                deltaspace_list_prefix = f"{bucket}/{deltaspace_prefix}" if deltaspace_prefix else bucket
+                deltaspace_list_prefix = (
+                    f"{bucket}/{deltaspace_prefix}" if deltaspace_prefix else bucket
+                )
                 remaining_objects = list(self.storage.list(deltaspace_list_prefix))
 
                 # Filter out objects that are being deleted (within our deletion scope)
@@ -830,7 +832,9 @@ class DeltaService:
                     warnings_list = result["warnings"]
                     assert isinstance(warnings_list, list)
                     warnings_list.append(f"Kept reference {ref_key} (still in use)")
-                    self.logger.info(f"Kept reference {ref_key} - still in use outside deletion scope")
+                    self.logger.info(
+                        f"Kept reference {ref_key} - still in use outside deletion scope"
+                    )
 
             except Exception as e:
                 failed_count = result["failed_count"]
