@@ -405,28 +405,43 @@ def rm(
                 click.echo("Error: Cannot remove directories. Use --recursive", err=True)
                 sys.exit(1)
 
-            # List all objects with prefix
-            list_prefix = f"{bucket}/{prefix}" if prefix else bucket
-            objects = list(service.storage.list(list_prefix))
-
-            if not objects:
-                if not quiet:
-                    click.echo(f"delete: No objects found with prefix: s3://{bucket}/{prefix}")
-                return
-
-            # Delete all objects
-            deleted_count = 0
-            for obj in objects:
-                if dryrun:
-                    click.echo(f"(dryrun) delete: s3://{bucket}/{obj.key}")
-                else:
-                    service.storage.delete(f"{bucket}/{obj.key}")
+            # Use the service's delete_recursive method for proper delta-aware deletion
+            if dryrun:
+                # For dryrun, we need to simulate what would be deleted
+                objects = list(service.storage.list(f"{bucket}/{prefix}" if prefix else bucket))
+                if not objects:
                     if not quiet:
-                        click.echo(f"delete: s3://{bucket}/{obj.key}")
-                deleted_count += 1
+                        click.echo(f"delete: No objects found with prefix: s3://{bucket}/{prefix}")
+                    return
 
-            if not quiet and not dryrun:
-                click.echo(f"Deleted {deleted_count} object(s)")
+                for obj in objects:
+                    click.echo(f"(dryrun) delete: s3://{bucket}/{obj.key}")
+
+                if not quiet:
+                    click.echo(f"Would delete {len(objects)} object(s)")
+            else:
+                # Use the core service method for actual deletion
+                result = service.delete_recursive(bucket, prefix)
+
+                # Report the results
+                if not quiet:
+                    if result["deleted_count"] == 0:
+                        click.echo(f"delete: No objects found with prefix: s3://{bucket}/{prefix}")
+                    else:
+                        click.echo(f"Deleted {result['deleted_count']} object(s)")
+
+                        # Show warnings if any references were kept
+                        for warning in result.get("warnings", []):
+                            if "Kept reference" in warning:
+                                click.echo(f"Keeping reference file (still in use): s3://{bucket}/{warning.split()[2]}")
+
+                # Report any errors
+                if result["failed_count"] > 0:
+                    for error in result.get("errors", []):
+                        click.echo(f"Error: {error}", err=True)
+
+                    if result["failed_count"] > 0:
+                        sys.exit(1)
 
     except Exception as e:
         click.echo(f"delete failed: {e}", err=True)

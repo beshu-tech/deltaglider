@@ -719,6 +719,7 @@ class DeltaService:
         references = []
         deltas = []
         direct_uploads = []
+        affected_deltaspaces = set()
 
         for obj in self.storage.list(f"{bucket}/{prefix}" if prefix else bucket):
             if not obj.key.startswith(prefix) and prefix:
@@ -728,6 +729,10 @@ class DeltaService:
                 references.append(obj.key)
             elif obj.key.endswith(".delta"):
                 deltas.append(obj.key)
+                # Track which deltaspaces are affected by this deletion
+                if "/" in obj.key:
+                    deltaspace_prefix = "/".join(obj.key.split("/")[:-1])
+                    affected_deltaspaces.add(deltaspace_prefix)
             else:
                 # Check if it's a direct upload
                 obj_head = self.storage.head(f"{bucket}/{obj.key}")
@@ -735,6 +740,16 @@ class DeltaService:
                     direct_uploads.append(obj.key)
                 else:
                     objects_to_delete.append(obj.key)
+
+        # Also check for references in parent directories that might be affected
+        # by the deletion of delta files in affected deltaspaces
+        for deltaspace_prefix in affected_deltaspaces:
+            ref_key = f"{deltaspace_prefix}/reference.bin"
+            if ref_key not in references:
+                # Check if this reference exists
+                ref_head = self.storage.head(f"{bucket}/{ref_key}")
+                if ref_head:
+                    references.append(ref_key)
 
         result: dict[str, Any] = {
             "bucket": bucket,
@@ -749,11 +764,12 @@ class DeltaService:
             "warnings": [],
         }
 
-        # Delete in order: other files -> direct uploads -> deltas -> references
+        # Delete in order: other files -> direct uploads -> deltas -> references (with checks)
         # This ensures we don't delete references that deltas depend on prematurely
-        delete_order = objects_to_delete + direct_uploads + deltas + references
+        regular_files = objects_to_delete + direct_uploads + deltas
 
-        for key in delete_order:
+        # Delete regular files first
+        for key in regular_files:
             try:
                 self.storage.delete(f"{bucket}/{key}")
                 deleted_count = result["deleted_count"]
@@ -768,6 +784,67 @@ class DeltaService:
                 assert isinstance(errors_list, list)
                 errors_list.append(f"Failed to delete {key}: {str(e)}")
                 self.logger.error(f"Failed to delete {key}: {e}")
+
+        # Handle references intelligently - only delete if no files outside deletion scope depend on them
+        references_kept = 0
+        for ref_key in references:
+            try:
+                # Extract deltaspace prefix from reference.bin path
+                if ref_key.endswith("/reference.bin"):
+                    deltaspace_prefix = ref_key[:-14]  # Remove "/reference.bin"
+                else:
+                    deltaspace_prefix = ""
+
+                # Check if there are any remaining files in this deltaspace
+                # (outside of the deletion prefix)
+                deltaspace_list_prefix = f"{bucket}/{deltaspace_prefix}" if deltaspace_prefix else bucket
+                remaining_objects = list(self.storage.list(deltaspace_list_prefix))
+
+                # Filter out objects that are being deleted (within our deletion scope)
+                # and the reference.bin file itself
+                deletion_prefix_full = f"{bucket}/{prefix}" if prefix else bucket
+                has_remaining_files = False
+
+                for remaining_obj in remaining_objects:
+                    obj_full_path = f"{bucket}/{remaining_obj.key}"
+                    # Skip if this object is within our deletion scope
+                    if prefix and obj_full_path.startswith(deletion_prefix_full):
+                        continue
+                    # Skip if this is the reference.bin file itself
+                    if remaining_obj.key == ref_key:
+                        continue
+                    # If we find any other file, the reference is still needed
+                    has_remaining_files = True
+                    break
+
+                if not has_remaining_files:
+                    # Safe to delete this reference.bin
+                    self.storage.delete(f"{bucket}/{ref_key}")
+                    deleted_count = result["deleted_count"]
+                    assert isinstance(deleted_count, int)
+                    result["deleted_count"] = deleted_count + 1
+                    self.logger.debug(f"Deleted reference {ref_key}")
+                else:
+                    # Keep the reference as it's still needed
+                    references_kept += 1
+                    warnings_list = result["warnings"]
+                    assert isinstance(warnings_list, list)
+                    warnings_list.append(f"Kept reference {ref_key} (still in use)")
+                    self.logger.info(f"Kept reference {ref_key} - still in use outside deletion scope")
+
+            except Exception as e:
+                failed_count = result["failed_count"]
+                assert isinstance(failed_count, int)
+                result["failed_count"] = failed_count + 1
+                errors_list = result["errors"]
+                assert isinstance(errors_list, list)
+                errors_list.append(f"Failed to delete reference {ref_key}: {str(e)}")
+                self.logger.error(f"Failed to delete reference {ref_key}: {e}")
+
+        # Update reference deletion count
+        references_deleted = result["references_deleted"]
+        assert isinstance(references_deleted, int)
+        result["references_deleted"] = references_deleted - references_kept
 
         # Clear any cached references for this prefix
         if references:
