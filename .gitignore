@@ -86,3 +86,4 @@ docs/_templates/
 
 # Temporary downloads
 temp_downloads/
+src/deltaglider/_version.py
