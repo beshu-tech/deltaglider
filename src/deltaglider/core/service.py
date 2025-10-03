@@ -659,11 +659,41 @@ class DeltaService:
                     self.logger.debug(f"Could not clear cache for {object_key.key}: {e}")
 
         elif is_delta:
-            # Simply delete the delta file
+            # Delete the delta file
             self.storage.delete(full_key)
             result["deleted"] = True
             result["type"] = "delta"
             result["original_name"] = obj_head.metadata.get("original_name", "unknown")
+
+            # Check if this was the last delta in the DeltaSpace - if so, clean up reference.bin
+            if "/" in object_key.key:
+                deltaspace_prefix = "/".join(object_key.key.split("/")[:-1])
+                ref_key = f"{deltaspace_prefix}/reference.bin"
+
+                # Check if any other delta files exist in this DeltaSpace
+                remaining_deltas = []
+                for obj in self.storage.list(f"{object_key.bucket}/{deltaspace_prefix}"):
+                    if obj.key.endswith(".delta") and obj.key != object_key.key:
+                        remaining_deltas.append(obj.key)
+
+                if not remaining_deltas:
+                    # No more deltas - clean up the orphaned reference.bin
+                    ref_full_key = f"{object_key.bucket}/{ref_key}"
+                    ref_head = self.storage.head(ref_full_key)
+                    if ref_head:
+                        self.storage.delete(ref_full_key)
+                        self.logger.info(
+                            "Cleaned up orphaned reference.bin",
+                            ref_key=ref_key,
+                            reason="no remaining deltas",
+                        )
+                        result["cleaned_reference"] = ref_key
+
+                        # Clear from cache
+                        try:
+                            self.cache.evict(object_key.bucket, deltaspace_prefix)
+                        except Exception as e:
+                            self.logger.debug(f"Could not clear cache for {deltaspace_prefix}: {e}")
 
         elif is_direct:
             # Simply delete the direct upload

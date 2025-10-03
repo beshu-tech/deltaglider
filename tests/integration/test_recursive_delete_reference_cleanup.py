@@ -286,6 +286,7 @@ class TestRecursiveDeleteReferenceCleanup:
             last_modified=None,
             metadata={"original_name": "file.zip"},
         )
+        mock_storage.list.return_value = []  # No other deltas remain
         mock_storage.delete.return_value = None
 
         # Test single delete

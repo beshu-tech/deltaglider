@@ -193,13 +193,13 @@ deltaglider ls -h s3://backups/
 deltaglider rm -r s3://backups/2023/
 ```
 
-### Python SDK - Drop-in boto3 Replacement
+### Python SDK - boto3-Compatible API
 
-**[📚 Full SDK Documentation](docs/sdk/README.md)** | **[API Reference](docs/sdk/api.md)** | **[Examples](docs/sdk/examples.md)**
+**[📚 Full SDK Documentation](docs/sdk/README.md)** | **[API Reference](docs/sdk/api.md)** | **[Examples](docs/sdk/examples.md)** | **[boto3 Compatibility Guide](BOTO3_COMPATIBILITY.md)**
 
 #### Quick Start - boto3 Compatible API (Recommended)
 
-DeltaGlider provides a **100% boto3-compatible API** that works as a drop-in replacement for AWS S3 SDK:
+DeltaGlider provides a **boto3-compatible API** for core S3 operations (21 methods covering 80% of use cases):
 
 ```python
 from deltaglider import create_client
@@ -239,7 +239,47 @@ stats = client.get_bucket_stats('releases', detailed_stats=True)  # With compres
 
 client.delete_object(Bucket='releases', Key='old-version.zip')
 client.head_object(Bucket='releases', Key='v2.0.0/my-app.zip')
+
+# Bucket management - no boto3 needed!
+client.create_bucket(Bucket='my-new-bucket')
+client.list_buckets()
+client.delete_bucket(Bucket='my-new-bucket')
 ```
+
+#### Bucket Management (NEW!)
+
+**No boto3 required!** DeltaGlider now provides complete bucket management:
+
+```python
+from deltaglider import create_client
+
+client = create_client()
+
+# Create buckets
+client.create_bucket(Bucket='my-releases')
+
+# Create bucket in specific region (AWS only)
+client.create_bucket(
+    Bucket='my-regional-bucket',
+    CreateBucketConfiguration={'LocationConstraint': 'us-west-2'}
+)
+
+# List all buckets
+response = client.list_buckets()
+for bucket in response['Buckets']:
+    print(f"{bucket['Name']} - {bucket['CreationDate']}")
+
+# Delete bucket (must be empty)
+client.delete_bucket(Bucket='my-old-bucket')
+```
+
+**Benefits:**
+- ✅ No need to import boto3 separately for bucket operations
+- ✅ Consistent API with DeltaGlider object operations
+- ✅ Works with AWS S3, MinIO, and S3-compatible storage
+- ✅ Idempotent operations (safe to retry)
+
+See [examples/bucket_management.py](examples/bucket_management.py) for complete example.
 
 #### Simple API (Alternative)
 

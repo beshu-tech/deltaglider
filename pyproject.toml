@@ -144,8 +144,12 @@ disallow_untyped_defs = true
 disallow_any_unimported = false
 no_implicit_optional = true
 check_untyped_defs = true
-namespace_packages = true
-explicit_package_bases = true
+namespace_packages = false
+mypy_path = "src"
+exclude = [
+    "^build/",
+    "^dist/",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

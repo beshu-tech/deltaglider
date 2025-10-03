@@ -252,11 +252,13 @@ def ls(
                 return f"{size_float:.1f}P"
 
             # List objects using SDK (automatically filters .delta and reference.bin)
-            from deltaglider.client import DeltaGliderClient
+            from deltaglider.client import DeltaGliderClient, ListObjectsResponse
 
             client = DeltaGliderClient(service)
-            response = client.list_objects(Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000)
-            objects = response.contents
+            dg_response: ListObjectsResponse = client.list_objects(
+                Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000
+            )
+            objects = dg_response.contents
 
             # Filter by recursive flag
             if not recursive:
