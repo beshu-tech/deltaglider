@@ -347,12 +347,21 @@ class DeltaGliderClient:
         # Convert to ObjectInfo objects with smart metadata fetching
         contents = []
         for obj in result.get("objects", []):
+            # Skip reference.bin files (internal files, never exposed to users)
+            if obj["key"].endswith("/reference.bin") or obj["key"] == "reference.bin":
+                continue
+
             # Determine file type
             is_delta = obj["key"].endswith(".delta")
 
+            # Remove .delta suffix from display key (hide internal implementation)
+            display_key = obj["key"]
+            if is_delta:
+                display_key = display_key[:-6]  # Remove .delta suffix
+
             # Create object info with basic data (no HEAD request)
             info = ObjectInfo(
-                key=obj["key"],
+                key=display_key,  # Use cleaned key without .delta
                 size=obj["size"],
                 last_modified=obj.get("last_modified", ""),
                 etag=obj.get("etag"),

@@ -251,9 +251,12 @@ def ls(
                     size_float /= 1024.0
                 return f"{size_float:.1f}P"
 
-            # List objects
-            list_prefix = f"{bucket_name}/{prefix_str}" if prefix_str else bucket_name
-            objects = list(service.storage.list(list_prefix))
+            # List objects using SDK (automatically filters .delta and reference.bin)
+            from deltaglider.client import DeltaGliderClient
+
+            client = DeltaGliderClient(service)
+            response = client.list_objects(Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000)
+            objects = response.contents
 
             # Filter by recursive flag
             if not recursive:
@@ -276,28 +279,24 @@ def ls(
                             filtered_objects.append(obj)
                 objects = filtered_objects
 
-            # Display objects
+            # Display objects (SDK already filters reference.bin and strips .delta)
             total_size = 0
             total_count = 0
 
             for obj in objects:
-                # Skip reference.bin files (internal)
-                if obj.key.endswith("/reference.bin"):
-                    continue
-
                 total_size += obj.size
                 total_count += 1
 
                 # Format the display
                 size_str = format_bytes(obj.size)
-                date_str = obj.last_modified.strftime("%Y-%m-%d %H:%M:%S")
+                # last_modified is a string from SDK, parse it if needed
+                if isinstance(obj.last_modified, str):
+                    # Already a string, extract date portion
+                    date_str = obj.last_modified[:19].replace("T", " ")
+                else:
+                    date_str = obj.last_modified.strftime("%Y-%m-%d %H:%M:%S")
 
-                # Remove .delta extension from display
-                display_key = obj.key
-                if display_key.endswith(".delta"):
-                    display_key = display_key[:-6]
-
-                click.echo(f"{date_str} {size_str:>10} s3://{bucket_name}/{display_key}")
+                click.echo(f"{date_str} {size_str:>10} s3://{bucket_name}/{obj.key}")
 
             # Show summary if requested
             if summarize:
