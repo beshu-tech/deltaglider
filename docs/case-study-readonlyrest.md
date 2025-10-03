@@ -57,7 +57,7 @@ aws s3 cp readonlyrest-1.66.1_es8.0.0.zip s3://releases/
 # Size on S3: 82.5MB
 
 # With DeltaGlider
-deltaglider put readonlyrest-1.66.1_es8.0.0.zip s3://releases/
+deltaglider cp readonlyrest-1.66.1_es8.0.0.zip s3://releases/
 # Size on S3: 65KB (99.92% smaller!)
 ```
 
@@ -186,7 +186,7 @@ This intelligence meant our 127,455 checksum files were uploaded directly, avoid
 ```bash
 # Simple integration into our CI/CD
 - aws s3 cp $FILE s3://releases/
-+ deltaglider put $FILE s3://releases/
++ deltaglider cp $FILE s3://releases/
 ```
 
 ### Week 4: Full Migration
@@ -253,10 +253,10 @@ Storage costs scale linearly with data growth. Without DeltaGlider:
 pip install deltaglider
 
 # Upload a file (automatic compression)
-deltaglider put my-release-v1.0.0.zip s3://releases/
+deltaglider cp my-release-v1.0.0.zip s3://releases/
 
 # Download (automatic reconstruction)
-deltaglider get s3://releases/my-release-v1.0.0.zip
+deltaglider cp s3://releases/my-release-v1.0.0.zip .
 
 # It's that simple.
 ```
@@ -277,12 +277,12 @@ completely_different:   0%     # No compression (uploaded as-is)
 **GitHub Actions**:
 ```yaml
 - name: Upload Release
-  run: deltaglider put dist/*.zip s3://releases/${{ github.ref_name }}/
+  run: deltaglider cp dist/*.zip s3://releases/${{ github.ref_name }}/
 ```
 
 **Jenkins Pipeline**:
 ```groovy
-sh "deltaglider put ${WORKSPACE}/target/*.jar s3://artifacts/"
+sh "deltaglider cp ${WORKSPACE}/target/*.jar s3://artifacts/"
 ```
 
 **Python Script**:
@@ -327,7 +327,7 @@ python calculate_savings.py --path /your/releases
 # Try it yourself
 docker run -p 9000:9000 minio/minio  # Local S3
 pip install deltaglider
-deltaglider put your-file.zip s3://test/
+deltaglider cp your-file.zip s3://test/
 ```
 
 ---

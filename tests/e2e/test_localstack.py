@@ -72,7 +72,7 @@ class TestLocalStackE2E:
             file2.write_text("Plugin version 1.0.1 content with minor changes")
 
             # Upload first file (becomes reference)
-            result = runner.invoke(cli, ["put", str(file1), f"s3://{test_bucket}/plugins/"])
+            result = runner.invoke(cli, ["cp", str(file1), f"s3://{test_bucket}/plugins/"])
             assert result.exit_code == 0
             output1 = extract_json_from_cli_output(result.output)
             assert output1["operation"] == "create_reference"
@@ -85,7 +85,7 @@ class TestLocalStackE2E:
             assert "plugins/plugin-v1.0.0.zip.delta" in keys
 
             # Upload second file (creates delta)
-            result = runner.invoke(cli, ["put", str(file2), f"s3://{test_bucket}/plugins/"])
+            result = runner.invoke(cli, ["cp", str(file2), f"s3://{test_bucket}/plugins/"])
             assert result.exit_code == 0
             output2 = extract_json_from_cli_output(result.output)
             assert output2["operation"] == "create_delta"
@@ -97,9 +97,8 @@ class TestLocalStackE2E:
             result = runner.invoke(
                 cli,
                 [
-                    "get",
+                    "cp",
                     f"s3://{test_bucket}/plugins/plugin-v1.0.1.zip.delta",
-                    "-o",
                     str(output_file),
                 ],
             )
@@ -130,10 +129,10 @@ class TestLocalStackE2E:
             file_b1.write_text("Application B version 1")
 
             # Upload to different deltaspaces
-            result = runner.invoke(cli, ["put", str(file_a1), f"s3://{test_bucket}/apps/app-a/"])
+            result = runner.invoke(cli, ["cp", str(file_a1), f"s3://{test_bucket}/apps/app-a/"])
             assert result.exit_code == 0
 
-            result = runner.invoke(cli, ["put", str(file_b1), f"s3://{test_bucket}/apps/app-b/"])
+            result = runner.invoke(cli, ["cp", str(file_b1), f"s3://{test_bucket}/apps/app-b/"])
             assert result.exit_code == 0
 
             # Verify each deltaspace has its own reference
@@ -160,14 +159,14 @@ class TestLocalStackE2E:
             file2.write_text("B" * 1000)  # Completely different
 
             # Upload first file
-            result = runner.invoke(cli, ["put", str(file1), f"s3://{test_bucket}/test/"])
+            result = runner.invoke(cli, ["cp", str(file1), f"s3://{test_bucket}/test/"])
             assert result.exit_code == 0
 
             # Upload second file with low max-ratio
             result = runner.invoke(
                 cli,
                 [
-                    "put",
+                    "cp",
                     str(file2),
                     f"s3://{test_bucket}/test/",
                     "--max-ratio",

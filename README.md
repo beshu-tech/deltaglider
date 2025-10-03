@@ -91,15 +91,6 @@ deltaglider sync --exclude "*.log" ./src/ s3://backup/  # Exclude patterns
 deltaglider cp file.zip s3://bucket/ --endpoint-url http://localhost:9000
 ```
 
-### Legacy Commands (still supported)
-
-```bash
-# Original DeltaGlider commands
-deltaglider put my-app-v1.0.0.zip s3://releases/
-deltaglider get s3://releases/my-app-v1.0.1.zip
-deltaglider verify s3://releases/my-app-v1.0.1.zip.delta
-```
-
 ## Why xdelta3 Excels at Archive Compression
 
 Traditional diff algorithms (like `diff` or `git diff`) work line-by-line on text files. Binary diff tools like `bsdiff` or `courgette` are optimized for executables. But **xdelta3** is uniquely suited for compressed archives because:
@@ -495,7 +486,7 @@ uv run pytest
 # Run with local MinIO
 docker-compose up -d
 export AWS_ENDPOINT_URL=http://localhost:9000
-deltaglider put test.zip s3://test/
+deltaglider cp test.zip s3://test/
 ```
 
 ## FAQ

@@ -1,21 +1,23 @@
-# AWS S3 CLI Compatibility Plan for DeltaGlider
+# AWS S3 CLI Compatibility for DeltaGlider
 
 ## Current State
 
-DeltaGlider currently provides a custom CLI with the following commands:
+DeltaGlider provides AWS S3 CLI compatible commands with automatic delta compression:
 
-### Existing Commands
-- `deltaglider put <file> <s3_url>` - Upload file with delta compression
-- `deltaglider get <s3_url> [-o output]` - Download and reconstruct file
+### Commands
+- `deltaglider cp <source> <destination>` - Copy files with delta compression
+- `deltaglider ls [s3_url]` - List buckets and objects
+- `deltaglider rm <s3_url>` - Remove objects
+- `deltaglider sync <source> <destination>` - Synchronize directories
 - `deltaglider verify <s3_url>` - Verify file integrity
 
 ### Current Usage Examples
 ```bash
 # Upload a file
-deltaglider put myfile.zip s3://bucket/path/to/file.zip
+deltaglider cp myfile.zip s3://bucket/path/to/file.zip
 
-# Download a file (auto-detects .delta)
-deltaglider get s3://bucket/path/to/file.zip
+# Download a file
+deltaglider cp s3://bucket/path/to/file.zip .
 
 # Verify integrity
 deltaglider verify s3://bucket/path/to/file.zip.delta
@@ -168,18 +170,7 @@ Additional flags specific to DeltaGlider's delta compression:
 3. Create migration guide from aws-cli
 4. Performance benchmarks comparing to aws-cli
 
-## Migration Path for Existing Users
-
-### Alias Support During Transition
-```bash
-# Old command -> New command mapping
-deltaglider put FILE S3_URL    -> deltaglider cp FILE S3_URL
-deltaglider get S3_URL          -> deltaglider cp S3_URL .
-deltaglider verify S3_URL       -> deltaglider ls --verify S3_URL
-```
-
-### Environment Variables
-- `DELTAGLIDER_LEGACY_MODE=1` - Use old command syntax
+## Environment Variables
 - `DELTAGLIDER_AWS_COMPAT=1` - Strict AWS S3 CLI compatibility mode
 
 ## Success Criteria

@@ -129,7 +129,6 @@ src/deltaglider/
 4. **AWS S3 CLI Compatibility**:
    - Commands (`cp`, `ls`, `rm`, `sync`) mirror AWS CLI syntax exactly
    - Located in `app/cli/main.py` with helpers in `aws_compat.py`
-   - Maintains backward compatibility with original `put`/`get` commands
 
 ### Key Algorithms
 
