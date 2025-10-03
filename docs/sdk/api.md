@@ -77,7 +77,7 @@ class DeltaGliderClient:
 
 ### boto3-Compatible Methods (Recommended)
 
-These methods provide 100% compatibility with boto3's S3 client, making DeltaGlider a drop-in replacement.
+These methods provide compatibility with boto3's core S3 client operations. DeltaGlider implements 21 essential S3 methods covering ~80% of common use cases. See [BOTO3_COMPATIBILITY.md](../../BOTO3_COMPATIBILITY.md) for complete coverage details.
 
 #### `list_objects`
 
@@ -214,6 +214,102 @@ def get_object(
 ##### Returns
 
 Dict with Body stream and metadata (identical to boto3).
+
+#### `create_bucket`
+
+Create an S3 bucket (boto3-compatible).
+
+```python
+def create_bucket(
+    self,
+    Bucket: str,
+    CreateBucketConfiguration: Optional[Dict[str, str]] = None,
+    **kwargs
+) -> Dict[str, Any]
+```
+
+##### Parameters
+
+- **Bucket** (`str`): Name of the bucket to create.
+- **CreateBucketConfiguration** (`Optional[Dict[str, str]]`): Bucket configuration with optional LocationConstraint.
+
+##### Returns
+
+Dict with Location of created bucket.
+
+##### Notes
+
+- Idempotent: Creating an existing bucket returns success
+- Use for basic bucket creation without advanced S3 features
+
+##### Examples
+
+```python
+# Create bucket in default region
+client.create_bucket(Bucket='my-releases')
+
+# Create bucket in specific region
+client.create_bucket(
+    Bucket='my-backups',
+    CreateBucketConfiguration={'LocationConstraint': 'eu-west-1'}
+)
+```
+
+#### `delete_bucket`
+
+Delete an S3 bucket (boto3-compatible).
+
+```python
+def delete_bucket(
+    self,
+    Bucket: str,
+    **kwargs
+) -> Dict[str, Any]
+```
+
+##### Parameters
+
+- **Bucket** (`str`): Name of the bucket to delete.
+
+##### Returns
+
+Dict confirming deletion.
+
+##### Notes
+
+- Idempotent: Deleting a non-existent bucket returns success
+- Bucket must be empty before deletion
+
+##### Examples
+
+```python
+# Delete empty bucket
+client.delete_bucket(Bucket='old-releases')
+```
+
+#### `list_buckets`
+
+List all S3 buckets (boto3-compatible).
+
+```python
+def list_buckets(
+    self,
+    **kwargs
+) -> Dict[str, Any]
+```
+
+##### Returns
+
+Dict with list of buckets and owner information (identical to boto3).
+
+##### Examples
+
+```python
+# List all buckets
+response = client.list_buckets()
+for bucket in response['Buckets']:
+    print(f"{bucket['Name']} - Created: {bucket['CreationDate']}")
+```
 
 ### Simple API Methods
 

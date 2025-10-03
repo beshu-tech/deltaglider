@@ -5,14 +5,15 @@ Real-world examples and patterns for using DeltaGlider in production application
 ## Table of Contents
 
 1. [Performance-Optimized Bucket Listing](#performance-optimized-bucket-listing)
-2. [Software Release Management](#software-release-management)
-3. [Database Backup System](#database-backup-system)
-4. [CI/CD Pipeline Integration](#cicd-pipeline-integration)
-5. [Container Registry Storage](#container-registry-storage)
-6. [Machine Learning Model Versioning](#machine-learning-model-versioning)
-7. [Game Asset Distribution](#game-asset-distribution)
-8. [Log Archive Management](#log-archive-management)
-9. [Multi-Region Replication](#multi-region-replication)
+2. [Bucket Management](#bucket-management)
+3. [Software Release Management](#software-release-management)
+4. [Database Backup System](#database-backup-system)
+5. [CI/CD Pipeline Integration](#cicd-pipeline-integration)
+6. [Container Registry Storage](#container-registry-storage)
+7. [Machine Learning Model Versioning](#machine-learning-model-versioning)
+8. [Game Asset Distribution](#game-asset-distribution)
+9. [Log Archive Management](#log-archive-management)
+10. [Multi-Region Replication](#multi-region-replication)
 
 ## Performance-Optimized Bucket Listing
 
@@ -203,6 +204,94 @@ performance_comparison('releases')
 4. **Cache Results**: If you need metadata frequently, consider caching the results to avoid repeated HEAD requests.
 
 5. **Batch Analytics**: When doing analytics, fetch metadata once and process the results rather than making multiple calls.
+
+## Bucket Management
+
+DeltaGlider provides boto3-compatible bucket management methods for creating, listing, and deleting buckets without requiring boto3.
+
+### Complete Bucket Lifecycle
+
+```python
+from deltaglider import create_client
+
+client = create_client()
+
+# Create bucket
+client.create_bucket(Bucket='my-releases')
+
+# Create bucket in specific region
+client.create_bucket(
+    Bucket='eu-backups',
+    CreateBucketConfiguration={'LocationConstraint': 'eu-west-1'}
+)
+
+# List all buckets
+response = client.list_buckets()
+for bucket in response['Buckets']:
+    print(f"{bucket['Name']} - Created: {bucket['CreationDate']}")
+
+# Upload some objects
+with open('app-v1.0.0.zip', 'rb') as f:
+    client.put_object(Bucket='my-releases', Key='v1.0.0/app.zip', Body=f)
+
+# Delete objects first (bucket must be empty)
+client.delete_object(Bucket='my-releases', Key='v1.0.0/app.zip')
+
+# Delete bucket
+client.delete_bucket(Bucket='my-releases')
+```
+
+### Idempotent Operations
+
+Bucket management operations are idempotent for safe automation:
+
+```python
+# Creating existing bucket returns success (no error)
+client.create_bucket(Bucket='my-releases')
+client.create_bucket(Bucket='my-releases')  # Safe, returns success
+
+# Deleting non-existent bucket returns success (no error)
+client.delete_bucket(Bucket='non-existent')  # Safe, returns success
+```
+
+### Hybrid boto3/DeltaGlider Usage
+
+For advanced S3 features not in DeltaGlider's 21 core methods, use boto3 directly:
+
+```python
+from deltaglider import create_client
+import boto3
+
+# DeltaGlider for core operations with compression
+dg_client = create_client()
+
+# boto3 for advanced features
+s3_client = boto3.client('s3')
+
+# Use DeltaGlider for object operations (with compression)
+with open('release.zip', 'rb') as f:
+    dg_client.put_object(Bucket='releases', Key='v1.0.0/release.zip', Body=f)
+
+# Use boto3 for advanced bucket features
+s3_client.put_bucket_versioning(
+    Bucket='releases',
+    VersioningConfiguration={'Status': 'Enabled'}
+)
+
+# Use boto3 for bucket policies
+policy = {
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Principal": "*",
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::releases/*"
+    }]
+}
+s3_client.put_bucket_policy(Bucket='releases', Policy=json.dumps(policy))
+```
+
+See [BOTO3_COMPATIBILITY.md](../../BOTO3_COMPATIBILITY.md) for complete method coverage.
 
 ## Software Release Management
 
