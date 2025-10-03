@@ -126,36 +126,35 @@ class TestLocalStackE2E:
             assert verify_output["valid"] is True
 
     def test_multiple_deltaspaces(self, test_bucket, s3_client):
-        """Test multiple deltaspace directories with separate references."""
+        """Test shared deltaspace with multiple files."""
         runner = CliRunner()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
 
-            # Create test files for different deltaspaces
+            # Create test files for the same deltaspace
             file_a1 = tmpdir / "app-a-v1.zip"
             file_a1.write_text("Application A version 1")
 
             file_b1 = tmpdir / "app-b-v1.zip"
             file_b1.write_text("Application B version 1")
 
-            # Upload to different deltaspaces (each subdirectory is its own deltaspace)
+            # Upload to same deltaspace (apps/) with different target paths
             result = runner.invoke(cli, ["cp", str(file_a1), f"s3://{test_bucket}/apps/app-a/"])
             assert result.exit_code == 0
 
             result = runner.invoke(cli, ["cp", str(file_b1), f"s3://{test_bucket}/apps/app-b/"])
             assert result.exit_code == 0
 
-            # Verify each deltaspace has its own reference (different deltaspaces)
+            # Verify deltaspace has reference (both files share apps/ deltaspace)
             objects = s3_client.list_objects_v2(Bucket=test_bucket, Prefix="apps/")
             assert "Contents" in objects
             keys = [obj["Key"] for obj in objects["Contents"]]
-            # Should have: apps/app-a/reference.bin, apps/app-a/app-a-v1.zip.delta,
-            #              apps/app-b/reference.bin, apps/app-b/app-b-v1.zip.delta
-            assert "apps/app-a/reference.bin" in keys
-            assert "apps/app-a/app-a-v1.zip.delta" in keys
-            assert "apps/app-b/reference.bin" in keys
-            assert "apps/app-b/app-b-v1.zip.delta" in keys
+            # Should have: apps/reference.bin, apps/app-a-v1.zip.delta, apps/app-b-v1.zip.delta
+            # Both files share the same deltaspace (apps/) so only one reference
+            assert "apps/reference.bin" in keys
+            assert "apps/app-a-v1.zip.delta" in keys
+            assert "apps/app-b-v1.zip.delta" in keys
 
     def test_large_delta_warning(self, test_bucket, s3_client):
         """Test delta compression with different content."""
