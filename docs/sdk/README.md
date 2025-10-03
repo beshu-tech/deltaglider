@@ -1,13 +1,14 @@
 # DeltaGlider Python SDK Documentation
 
-The DeltaGlider Python SDK provides a **100% boto3-compatible API** that works as a drop-in replacement for AWS S3 SDK, while achieving 99%+ compression for versioned artifacts through intelligent binary delta compression.
+The DeltaGlider Python SDK provides a **boto3-compatible API for core S3 operations** (~20% of methods covering 80% of use cases), while achieving 99%+ compression for versioned artifacts through intelligent binary delta compression.
 
 ## 🎯 Key Highlights
 
-- **Drop-in boto3 Replacement**: Use your existing boto3 S3 code, just change the import
+- **boto3-Compatible Core API**: 21 essential S3 methods that work exactly like boto3
 - **99%+ Compression**: Automatically for versioned files and archives
-- **Zero Learning Curve**: If you know boto3, you already know DeltaGlider
-- **Full Compatibility**: Works with AWS S3, MinIO, Cloudflare R2, and all S3-compatible storage
+- **Familiar API**: If you know boto3, you already know DeltaGlider's core methods
+- **Full S3 Compatibility**: Works with AWS S3, MinIO, Cloudflare R2, and all S3-compatible storage
+- **See [BOTO3_COMPATIBILITY.md](../../BOTO3_COMPATIBILITY.md)**: For complete method coverage details
 
 ## Quick Links
 
@@ -22,12 +23,12 @@ DeltaGlider provides three ways to interact with your S3 storage:
 
 ### 1. boto3-Compatible API (Recommended) 🌟
 
-Drop-in replacement for boto3 S3 client with automatic compression:
+Core boto3 S3 methods with automatic compression (see [BOTO3_COMPATIBILITY.md](../../BOTO3_COMPATIBILITY.md) for full list):
 
 ```python
 from deltaglider import create_client
 
-# Exactly like boto3.client('s3'), but with 99% compression!
+# Core boto3 S3 methods work exactly the same, with 99% compression!
 client = create_client()
 
 # Standard boto3 S3 methods - just work!
@@ -76,7 +77,7 @@ deltaglider sync ./builds/ s3://releases/
 
 ## Migration from boto3
 
-Migrating from boto3 to DeltaGlider is as simple as changing your import:
+For core S3 operations, migrating is as simple as changing your import:
 
 ```python
 # Before (boto3)
@@ -84,15 +85,17 @@ import boto3
 client = boto3.client('s3')
 client.put_object(Bucket='mybucket', Key='myfile.zip', Body=data)
 
-# After (DeltaGlider) - That's it! 99% compression automatically
+# After (DeltaGlider) - Core methods work the same, with 99% compression!
 from deltaglider import create_client
 client = create_client()
 client.put_object(Bucket='mybucket', Key='myfile.zip', Body=data)
 ```
 
+**Note**: DeltaGlider implements ~21 core S3 methods. For advanced features (versioning, ACLs, multipart uploads >5GB), use boto3 directly. See [BOTO3_COMPATIBILITY.md](../../BOTO3_COMPATIBILITY.md) for details.
+
 ## Key Features
 
-- **100% boto3 Compatibility**: All S3 methods work exactly as expected
+- **Core boto3 Compatibility**: 21 essential S3 methods work exactly as expected (~20% coverage, 80% use cases)
 - **99%+ Compression**: For versioned artifacts and similar files
 - **Intelligent Detection**: Automatically determines when to use delta compression
 - **Data Integrity**: SHA256 verification on every operation
@@ -198,7 +201,7 @@ client = create_client(
 ```python
 from deltaglider import create_client
 
-# Works exactly like boto3!
+# Core boto3 methods work exactly like boto3!
 client = create_client()
 
 # Upload multiple software versions
@@ -230,7 +233,7 @@ for version in versions:
 2. **Delta Compression**: Subsequent similar files are compared using xdelta3
 3. **Smart Storage**: Only the differences (deltas) are stored
 4. **Transparent Reconstruction**: Files are automatically reconstructed on download
-5. **boto3 Compatibility**: All operations maintain full boto3 API compatibility
+5. **Core boto3 Compatibility**: Essential operations maintain full boto3 API compatibility
 
 ## Performance
 
