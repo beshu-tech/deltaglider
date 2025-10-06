@@ -12,11 +12,11 @@
 
 **Store 4TB of similar files in 5GB. No, that's not a typo.**
 
-DeltaGlider is a drop-in S3 replacement that achieves 99.9% compression for versioned artifacts, backups, and release archives through intelligent binary delta compression.
+DeltaGlider is a drop-in S3 replacement that may achieve 99.9% size reduction for versioned compressed artifacts, backups, and release archives through intelligent binary delta compression (via xdelta3).
 
 ## The Problem We Solved
 
-You're storing hundreds of versions of your releases. Each 100MB build differs by <1% from the previous version. You're paying to store 100GB of what's essentially 100MB of unique data.
+You're storing hundreds of versions of your software releases. Each 100MB build differs by <1% from the previous version. You're paying to store 100GB of what's essentially 100MB of unique data.
 
 Sound familiar?
 
@@ -435,8 +435,8 @@ DeltaGlider uses a clean hexagonal architecture:
 - Any versioned binary data
 
 ❌ **Not ideal for:**
-- Already compressed unique files
-- Streaming media files
+- Already compressed **unique** files
+- Streaming or multimedia files
 - Frequently changing unstructured data
 - Files smaller than 1MB
 

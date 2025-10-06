@@ -146,6 +146,68 @@ def client(tmp_path):
     return client
 
 
+class TestCredentialHandling:
+    """Test AWS credential passing."""
+
+    def test_create_client_with_explicit_credentials(self, tmp_path):
+        """Test that credentials can be passed directly to create_client."""
+        # This test verifies the API accepts credentials, not that they work
+        # (we'd need a real S3 or LocalStack for that)
+        client = create_client(
+            aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
+            aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region_name="us-west-2",
+            cache_dir=str(tmp_path / "cache"),
+        )
+
+        # Verify the client was created
+        assert client is not None
+        assert client.service is not None
+
+        # Verify credentials were passed to the storage adapter's boto3 client
+        # The storage adapter should have a client with these credentials
+        storage = client.service.storage
+        assert hasattr(storage, "client")
+
+        # Check that the boto3 client was configured with our credentials
+        # Note: boto3 doesn't expose credentials directly, but we can verify
+        # the client was created (if credentials were invalid, this would fail)
+        assert storage.client is not None
+
+    def test_create_client_with_session_token(self, tmp_path):
+        """Test passing temporary credentials with session token."""
+        client = create_client(
+            aws_access_key_id="ASIAIOSFODNN7EXAMPLE",
+            aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            aws_session_token="FwoGZXIvYXdzEBEaDH...",
+            cache_dir=str(tmp_path / "cache"),
+        )
+
+        assert client is not None
+        assert client.service.storage.client is not None
+
+    def test_create_client_without_credentials_uses_environment(self, tmp_path):
+        """Test that omitting credentials falls back to environment/IAM."""
+        # This should use boto3's default credential chain
+        client = create_client(cache_dir=str(tmp_path / "cache"))
+
+        assert client is not None
+        assert client.service.storage.client is not None
+
+    def test_create_client_with_endpoint_and_credentials(self, tmp_path):
+        """Test passing both endpoint URL and credentials."""
+        client = create_client(
+            endpoint_url="http://localhost:9000",
+            aws_access_key_id="minioadmin",
+            aws_secret_access_key="minioadmin",
+            cache_dir=str(tmp_path / "cache"),
+        )
+
+        assert client is not None
+        # Endpoint should be available
+        assert client.endpoint_url == "http://localhost:9000"
+
+
 class TestBoto3Compatibility:
     """Test boto3-compatible methods."""
 

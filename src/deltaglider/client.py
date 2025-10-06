@@ -1396,6 +1396,10 @@ def create_client(
     endpoint_url: str | None = None,
     log_level: str = "INFO",
     cache_dir: str = "/tmp/.deltaglider/cache",
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+    aws_session_token: str | None = None,
+    region_name: str | None = None,
     **kwargs: Any,
 ) -> DeltaGliderClient:
     """Create a DeltaGlider client with boto3-compatible APIs.
@@ -1411,17 +1415,27 @@ def create_client(
         endpoint_url: Optional S3 endpoint URL (for MinIO, R2, etc.)
         log_level: Logging level
         cache_dir: Directory for reference cache
+        aws_access_key_id: AWS access key ID (None to use environment/IAM)
+        aws_secret_access_key: AWS secret access key (None to use environment/IAM)
+        aws_session_token: AWS session token for temporary credentials (None if not using)
+        region_name: AWS region name (None for default)
         **kwargs: Additional arguments
 
     Returns:
         DeltaGliderClient instance
 
     Examples:
-        >>> # Boto3-compatible usage
+        >>> # Boto3-compatible usage with default credentials
         >>> client = create_client()
         >>> client.put_object(Bucket='my-bucket', Key='file.zip', Body=b'data')
         >>> response = client.get_object(Bucket='my-bucket', Key='file.zip')
         >>> data = response['Body'].read()
+
+        >>> # With explicit credentials
+        >>> client = create_client(
+        ...     aws_access_key_id='AKIAIOSFODNN7EXAMPLE',
+        ...     aws_secret_access_key='wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+        ... )
 
         >>> # Batch operations
         >>> results = client.upload_batch(['v1.zip', 'v2.zip'], 's3://bucket/releases/')
@@ -1441,9 +1455,20 @@ def create_client(
         XdeltaAdapter,
     )
 
+    # Build boto3 client kwargs
+    boto3_kwargs = {}
+    if aws_access_key_id is not None:
+        boto3_kwargs["aws_access_key_id"] = aws_access_key_id
+    if aws_secret_access_key is not None:
+        boto3_kwargs["aws_secret_access_key"] = aws_secret_access_key
+    if aws_session_token is not None:
+        boto3_kwargs["aws_session_token"] = aws_session_token
+    if region_name is not None:
+        boto3_kwargs["region_name"] = region_name
+
     # Create adapters
     hasher = Sha256Adapter()
-    storage = S3StorageAdapter(endpoint_url=endpoint_url)
+    storage = S3StorageAdapter(endpoint_url=endpoint_url, boto3_kwargs=boto3_kwargs)
     diff = XdeltaAdapter()
     cache = FsCacheAdapter(Path(cache_dir), hasher)
     clock = UtcClockAdapter()

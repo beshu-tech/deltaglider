@@ -21,13 +21,31 @@ class S3StorageAdapter(StoragePort):
         self,
         client: Optional["S3Client"] = None,
         endpoint_url: str | None = None,
+        boto3_kwargs: dict[str, Any] | None = None,
     ):
-        """Initialize with S3 client."""
+        """Initialize with S3 client.
+
+        Args:
+            client: Pre-configured S3 client (if None, one will be created)
+            endpoint_url: S3 endpoint URL override (for MinIO, LocalStack, etc.)
+            boto3_kwargs: Additional kwargs to pass to boto3.client() including:
+                - aws_access_key_id: AWS access key
+                - aws_secret_access_key: AWS secret key
+                - aws_session_token: AWS session token (for temporary credentials)
+                - region_name: AWS region name
+        """
         if client is None:
-            self.client = boto3.client(
-                "s3",
-                endpoint_url=endpoint_url or os.environ.get("AWS_ENDPOINT_URL"),
-            )
+            # Build boto3 client parameters
+            client_params: dict[str, Any] = {
+                "service_name": "s3",
+                "endpoint_url": endpoint_url or os.environ.get("AWS_ENDPOINT_URL"),
+            }
+
+            # Merge in any additional boto3 kwargs (credentials, region, etc.)
+            if boto3_kwargs:
+                client_params.update(boto3_kwargs)
+
+            self.client = boto3.client(**client_params)
         else:
             self.client = client
 
