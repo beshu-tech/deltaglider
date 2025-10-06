@@ -235,6 +235,7 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
+        continue-on-error: true  # Don't fail if GitHub release creation fails
         with:
           tag_name: ${{ needs.validate-and-tag.outputs.tag_name }}
           name: Release v${{ github.event.inputs.version }}
