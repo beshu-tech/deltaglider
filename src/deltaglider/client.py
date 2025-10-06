@@ -8,6 +8,7 @@ from typing import Any
 
 from .adapters.storage_s3 import S3StorageAdapter
 from .core import DeltaService, DeltaSpace, ObjectKey
+from .core.errors import NotFoundError
 
 
 @dataclass
@@ -427,15 +428,23 @@ class DeltaGliderClient:
 
         Args:
             Bucket: S3 bucket name
-            Key: Object key
+            Key: Object key (can be with or without .delta suffix)
             **kwargs: Additional parameters
 
         Returns:
             Response dict with deletion details
         """
-        # Use core service's delta-aware delete
+        # Try to delete with the key as provided
         object_key = ObjectKey(bucket=Bucket, key=Key)
-        delete_result = self.service.delete(object_key)
+        try:
+            delete_result = self.service.delete(object_key)
+        except NotFoundError:
+            # Try with .delta suffix if not already present
+            if not Key.endswith(".delta"):
+                object_key = ObjectKey(bucket=Bucket, key=Key + ".delta")
+                delete_result = self.service.delete(object_key)
+            else:
+                raise
 
         response = {
             "DeleteMarker": False,

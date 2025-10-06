@@ -311,6 +311,24 @@ class TestBoto3Compatibility:
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 204
         assert "test-bucket/to-delete.txt" not in client.service.storage.objects
 
+    def test_delete_object_with_delta_suffix_fallback(self, client):
+        """Test delete_object with automatic .delta suffix fallback."""
+        # Add object with .delta suffix (as DeltaGlider stores it)
+        client.service.storage.objects["test-bucket/file.zip.delta"] = {
+            "size": 100,
+            "metadata": {
+                "original_name": "file.zip",
+                "compression": "delta",
+            },
+        }
+
+        # Delete using original name (without .delta)
+        response = client.delete_object(Bucket="test-bucket", Key="file.zip")
+
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 204
+        assert response["DeltaGliderInfo"]["Deleted"] is True
+        assert "test-bucket/file.zip.delta" not in client.service.storage.objects
+
     def test_delete_objects(self, client):
         """Test batch delete."""
         # Add objects
