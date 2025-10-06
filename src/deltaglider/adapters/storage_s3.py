@@ -163,7 +163,7 @@ class S3StorageAdapter(StoragePort):
 
         try:
             response = self.client.get_object(Bucket=bucket, Key=object_key)
-            return response["Body"]  # type: ignore[return-value]
+            return response["Body"]  # type: ignore[no-any-return]
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchKey":
                 raise FileNotFoundError(f"Object not found: {key}") from e
