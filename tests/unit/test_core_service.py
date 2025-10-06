@@ -147,22 +147,36 @@ class TestDeltaServiceGet:
             service.get(delta_key, temp_dir / "output.zip")
 
     def test_get_missing_metadata(self, service, mock_storage, temp_dir):
-        """Test get with missing metadata."""
+        """Test get with missing metadata (regular S3 object)."""
         # Setup
         delta_key = ObjectKey(bucket="test-bucket", key="test/file.zip.delta")
+
+        # Create test content
+        test_content = b"regular S3 file content"
+
+        # Mock a regular S3 object without DeltaGlider metadata
         mock_storage.head.return_value = ObjectHead(
             key="test/file.zip.delta",
-            size=100,
+            size=len(test_content),
             etag="abc",
             last_modified=None,
-            metadata={},  # Missing required metadata
+            metadata={},  # Missing DeltaGlider metadata - this is a regular S3 object
         )
 
-        # Execute and verify
-        from deltaglider.core.errors import StorageIOError
+        # Mock the storage.get to return the content
+        from unittest.mock import MagicMock
 
-        with pytest.raises(StorageIOError):
-            service.get(delta_key, temp_dir / "output.zip")
+        mock_stream = MagicMock()
+        mock_stream.read.side_effect = [test_content, b""]  # Return content then EOF
+        mock_storage.get.return_value = mock_stream
+
+        # Execute - should successfully download regular S3 object
+        output_path = temp_dir / "output.zip"
+        service.get(delta_key, output_path)
+
+        # Verify - file should be downloaded
+        assert output_path.exists()
+        assert output_path.read_bytes() == test_content
 
 
 class TestDeltaServiceVerify:

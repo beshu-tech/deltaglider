@@ -258,6 +258,26 @@ class TestBoto3Compatibility:
         content = response["Body"].read()
         assert content == b"Test Content"
 
+    def test_get_object_regular_s3_file(self, client):
+        """Test get_object with regular S3 files (not uploaded via DeltaGlider)."""
+
+        content = b"Regular S3 File Content"
+
+        # Add as a regular S3 object WITHOUT DeltaGlider metadata
+        client.service.storage.objects["test-bucket/regular-file.pdf"] = {
+            "data": content,
+            "size": len(content),
+            "metadata": {},  # No DeltaGlider metadata
+        }
+
+        # Should successfully download the regular S3 object
+        response = client.get_object(Bucket="test-bucket", Key="regular-file.pdf")
+
+        assert "Body" in response
+        downloaded_content = response["Body"].read()
+        assert downloaded_content == content
+        assert response["ContentLength"] == len(content)
+
     def test_list_objects(self, client):
         """Test list_objects with various options."""
         # List all objects (default: FetchMetadata=False)

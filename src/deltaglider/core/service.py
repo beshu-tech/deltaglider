@@ -21,7 +21,6 @@ from .errors import (
     IntegrityMismatchError,
     NotFoundError,
     PolicyViolationWarning,
-    StorageIOError,
 )
 from .models import (
     DeltaMeta,
@@ -171,10 +170,28 @@ class DeltaService:
         if obj_head is None:
             raise NotFoundError(f"Object not found: {object_key.key}")
 
+        # Check if this is a regular S3 object (not uploaded via DeltaGlider)
+        # Regular S3 objects won't have DeltaGlider metadata
         if "file_sha256" not in obj_head.metadata:
-            raise StorageIOError(f"Missing metadata on {object_key.key}")
+            # This is a regular S3 object, download it directly
+            self.logger.info(
+                "Downloading regular S3 object (no DeltaGlider metadata)",
+                key=object_key.key,
+            )
+            self._get_direct(object_key, obj_head, out)
+            duration = (self.clock.now() - start_time).total_seconds()
+            self.logger.log_operation(
+                op="get",
+                key=object_key.key,
+                deltaspace=f"{object_key.bucket}",
+                sizes={"file": obj_head.size},
+                durations={"total": duration},
+                cache_hit=False,
+            )
+            self.metrics.timing("deltaglider.get.duration", duration)
+            return
 
-        # Check if this is a direct upload (non-delta)
+        # Check if this is a direct upload (non-delta) uploaded via DeltaGlider
         if obj_head.metadata.get("compression") == "none":
             # Direct download without delta processing
             self._get_direct(object_key, obj_head, out)
