@@ -1,13 +1,11 @@
 """Comprehensive tests for DeltaGliderClient.delete_objects_recursive() method."""
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from deltaglider import create_client
-from deltaglider.client import DeltaGliderClient
-from deltaglider.core import DeltaService
 
 
 class MockStorage:
