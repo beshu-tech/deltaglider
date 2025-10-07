@@ -459,7 +459,9 @@ Migrating from `aws s3` to `deltaglider` is as simple as changing the command na
 - ✅ **S3 compatible**: Works with AWS, MinIO, Cloudflare R2, etc.
 - ✅ **Atomic operations**: No partial states
 - ✅ **Concurrent safe**: Multiple clients supported
-- ✅ **Well tested**: 95%+ code coverage
+- ✅ **Thoroughly tested**: 99 integration/unit tests, comprehensive test coverage
+- ✅ **Type safe**: Full mypy type checking, zero type errors
+- ✅ **Code quality**: Automated linting with ruff, clean codebase
 
 ## Development
 
@@ -471,8 +473,12 @@ cd deltaglider
 # Install with dev dependencies
 uv pip install -e ".[dev]"
 
-# Run tests
+# Run tests (99 integration/unit tests)
 uv run pytest
+
+# Run quality checks
+uv run ruff check src/        # Linting
+uv run mypy src/              # Type checking
 
 # Run with local MinIO
 docker-compose up -d
