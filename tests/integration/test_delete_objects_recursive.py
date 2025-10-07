@@ -91,9 +91,7 @@ class TestDeleteObjectsRecursiveBasicFunctionality:
         client.service.storage.objects["test-bucket/file.txt"] = {"size": 100}
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="file.txt"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.txt")
 
         # Verify response structure
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -116,9 +114,7 @@ class TestDeleteObjectsRecursiveBasicFunctionality:
         client.service.storage.objects["test-bucket/dir/sub/file3.txt"] = {"size": 300}
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="dir/"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="dir/")
 
         # Verify
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -148,9 +144,7 @@ class TestDeleteObjectsRecursiveDeltaSuffixHandling:
         }
 
         # Execute: Delete using original name (without .delta)
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="archive.zip"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="archive.zip")
 
         # Verify
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -162,9 +156,7 @@ class TestDeleteObjectsRecursiveDeltaSuffixHandling:
         client.service.storage.objects["test-bucket/file.zip.delta"] = {"size": 300}
 
         # Execute: Delete using .delta suffix directly
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="file.zip.delta"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.zip.delta")
 
         # Verify
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -175,9 +167,7 @@ class TestDeleteObjectsRecursiveDeltaSuffixHandling:
         client.service.storage.objects["test-bucket/dir/file.txt"] = {"size": 100}
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="dir/"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="dir/")
 
         # Verify - should not attempt to delete "dir/.delta"
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -200,9 +190,7 @@ class TestDeleteObjectsRecursiveStatisticsAggregation:
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="test/"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="test/")
 
         # Verify aggregation
         assert response["DeletedCount"] == 5
@@ -229,9 +217,7 @@ class TestDeleteObjectsRecursiveStatisticsAggregation:
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="file.txt"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.txt")
 
         # Verify that counts include both single delete and service delete
         assert response["DeletedCount"] >= 3  # At least service count
@@ -251,9 +237,7 @@ class TestDeleteObjectsRecursiveErrorHandling:
             mock_delete.side_effect = RuntimeError("Simulated delete error")
 
             # Execute
-            response = client.delete_objects_recursive(
-                Bucket="test-bucket", Prefix="file.txt"
-            )
+            response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.txt")
 
             # Verify error captured
             assert response["FailedCount"] > 0
@@ -275,9 +259,7 @@ class TestDeleteObjectsRecursiveErrorHandling:
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="test/"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="test/")
 
         # Verify
         assert response["FailedCount"] == 1
@@ -307,9 +289,7 @@ class TestDeleteObjectsRecursiveErrorHandling:
             mock_delete.side_effect = RuntimeError("Single delete error")
 
             # Execute
-            response = client.delete_objects_recursive(
-                Bucket="test-bucket", Prefix="file.txt"
-            )
+            response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.txt")
 
             # Verify both errors present
             assert "Errors" in response
@@ -336,9 +316,7 @@ class TestDeleteObjectsRecursiveWarningsHandling:
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="test/"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="test/")
 
         # Verify
         assert "Warnings" in response
@@ -372,9 +350,7 @@ class TestDeleteObjectsRecursiveWarningsHandling:
             )
 
             # Execute
-            response = client.delete_objects_recursive(
-                Bucket="test-bucket", Prefix="ref.bin"
-            )
+            response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="ref.bin")
 
             # Verify
             assert "Warnings" in response
@@ -413,9 +389,7 @@ class TestDeleteObjectsRecursiveSingleDeleteDetails:
             )
 
             # Execute
-            response = client.delete_objects_recursive(
-                Bucket="test-bucket", Prefix="file.txt"
-            )
+            response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.txt")
 
             # Verify
             assert "SingleDeletes" in response["DeltaGliderInfo"]
@@ -463,9 +437,7 @@ class TestDeleteObjectsRecursiveSingleDeleteDetails:
 
         try:
             # Execute
-            response = client.delete_objects_recursive(
-                Bucket="test-bucket", Prefix="file.zip"
-            )
+            response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.zip")
 
             # Verify
             assert "SingleDeletes" in response["DeltaGliderInfo"]
@@ -485,9 +457,7 @@ class TestDeleteObjectsRecursiveEdgeCases:
     def test_nonexistent_prefix_returns_zero_counts(self, client):
         """Test deleting nonexistent prefix returns zero counts."""
         # Execute
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="nonexistent/path/"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="nonexistent/path/")
 
         # Verify
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -500,9 +470,7 @@ class TestDeleteObjectsRecursiveEdgeCases:
         client.service.storage.objects["test-bucket/file.delta"] = {"size": 100}
 
         # Execute: Should not attempt to delete "file.delta" twice
-        response = client.delete_objects_recursive(
-            Bucket="test-bucket", Prefix="file.delta"
-        )
+        response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.delta")
 
         # Verify no errors
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
@@ -536,9 +504,7 @@ class TestDeleteObjectsRecursiveEdgeCases:
             )
 
             # Execute
-            response = client.delete_objects_recursive(
-                Bucket="test-bucket", Prefix="file.txt"
-            )
+            response = client.delete_objects_recursive(Bucket="test-bucket", Prefix="file.txt")
 
             # Verify it's categorized as "other"
             assert response["DeltaGliderInfo"]["OtherDeleted"] >= 1
