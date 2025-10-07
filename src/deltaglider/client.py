@@ -2,109 +2,20 @@
 
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .adapters.storage_s3 import S3StorageAdapter
+from .client_delete_helpers import delete_with_delta_suffix
+from .client_models import (
+    BucketStats,
+    CompressionEstimate,
+    ListObjectsResponse,
+    ObjectInfo,
+    UploadSummary,
+)
 from .core import DeltaService, DeltaSpace, ObjectKey
 from .core.errors import NotFoundError
-
-
-@dataclass
-class UploadSummary:
-    """User-friendly upload summary."""
-
-    operation: str
-    bucket: str
-    key: str
-    original_size: int
-    stored_size: int
-    is_delta: bool
-    delta_ratio: float = 0.0
-
-    @property
-    def original_size_mb(self) -> float:
-        """Original size in MB."""
-        return self.original_size / (1024 * 1024)
-
-    @property
-    def stored_size_mb(self) -> float:
-        """Stored size in MB."""
-        return self.stored_size / (1024 * 1024)
-
-    @property
-    def savings_percent(self) -> float:
-        """Percentage saved through compression."""
-        if self.original_size == 0:
-            return 0.0
-        return ((self.original_size - self.stored_size) / self.original_size) * 100
-
-
-@dataclass
-class CompressionEstimate:
-    """Compression estimate for a file."""
-
-    original_size: int
-    estimated_compressed_size: int
-    estimated_ratio: float
-    confidence: float
-    recommended_reference: str | None = None
-    should_use_delta: bool = True
-
-
-@dataclass
-class ObjectInfo:
-    """Detailed object information with compression stats."""
-
-    key: str
-    size: int
-    last_modified: str
-    etag: str | None = None
-    storage_class: str = "STANDARD"
-
-    # DeltaGlider-specific fields
-    original_size: int | None = None
-    compressed_size: int | None = None
-    compression_ratio: float | None = None
-    is_delta: bool = False
-    reference_key: str | None = None
-    delta_chain_length: int = 0
-
-
-@dataclass
-class ListObjectsResponse:
-    """Response from list_objects, compatible with boto3."""
-
-    name: str  # Bucket name
-    prefix: str = ""
-    delimiter: str = ""
-    max_keys: int = 1000
-    common_prefixes: list[dict[str, str]] = field(default_factory=list)
-    contents: list[ObjectInfo] = field(default_factory=list)
-    is_truncated: bool = False
-    next_continuation_token: str | None = None
-    continuation_token: str | None = None
-    key_count: int = 0
-
-    @property
-    def objects(self) -> list[ObjectInfo]:
-        """Alias for contents, for convenience."""
-        return self.contents
-
-
-@dataclass
-class BucketStats:
-    """Statistics for a bucket."""
-
-    bucket: str
-    object_count: int
-    total_size: int
-    compressed_size: int
-    space_saved: int
-    average_compression_ratio: float
-    delta_objects: int
-    direct_objects: int
 
 
 class DeltaGliderClient:
@@ -434,17 +345,7 @@ class DeltaGliderClient:
         Returns:
             Response dict with deletion details
         """
-        # Try to delete with the key as provided
-        object_key = ObjectKey(bucket=Bucket, key=Key)
-        try:
-            delete_result = self.service.delete(object_key)
-        except NotFoundError:
-            # Try with .delta suffix if not already present
-            if not Key.endswith(".delta"):
-                object_key = ObjectKey(bucket=Bucket, key=Key + ".delta")
-                delete_result = self.service.delete(object_key)
-            else:
-                raise
+        _, delete_result = delete_with_delta_suffix(self.service, Bucket, Key)
 
         response = {
             "DeleteMarker": False,
@@ -496,10 +397,11 @@ class DeltaGliderClient:
         for obj in Delete.get("Objects", []):
             key = obj["Key"]
             try:
-                object_key = ObjectKey(bucket=Bucket, key=key)
-                delete_result = self.service.delete(object_key)
+                actual_key, delete_result = delete_with_delta_suffix(self.service, Bucket, key)
 
                 deleted_item = {"Key": key}
+                if actual_key != key:
+                    deleted_item["StoredKey"] = actual_key
                 if delete_result.get("type"):
                     deleted_item["Type"] = delete_result["type"]
                 if delete_result.get("warnings"):
@@ -512,11 +414,20 @@ class DeltaGliderClient:
                     delta_info.append(
                         {
                             "Key": key,
+                            "StoredKey": actual_key,
                             "Type": delete_result["type"],
                             "DependentDeltas": delete_result.get("dependent_deltas", 0),
                         }
                     )
 
+            except NotFoundError as e:
+                errors.append(
+                    {
+                        "Key": key,
+                        "Code": "NoSuchKey",
+                        "Message": str(e),
+                    }
+                )
             except Exception as e:
                 errors.append(
                     {
@@ -556,28 +467,112 @@ class DeltaGliderClient:
         Returns:
             Response dict with deletion statistics
         """
-        # Use core service's delta-aware recursive delete
+        single_results: list[dict[str, Any]] = []
+        single_errors: list[str] = []
+
+        # First, attempt to delete the prefix as a direct object (with delta fallback)
+        if Prefix and not Prefix.endswith("/"):
+            candidate_keys = [Prefix]
+            if not Prefix.endswith(".delta"):
+                candidate_keys.append(f"{Prefix}.delta")
+
+            seen_candidates = set()
+            for candidate in candidate_keys:
+                if candidate in seen_candidates:
+                    continue
+                seen_candidates.add(candidate)
+
+                obj_head = self.service.storage.head(f"{Bucket}/{candidate}")
+                if not obj_head:
+                    continue
+
+                try:
+                    actual_key, delete_result = delete_with_delta_suffix(
+                        self.service, Bucket, candidate
+                    )
+                    if delete_result.get("deleted"):
+                        single_results.append(
+                            {
+                                "requested_key": candidate,
+                                "actual_key": actual_key,
+                                "result": delete_result,
+                            }
+                        )
+                except Exception as e:
+                    single_errors.append(f"Failed to delete {candidate}: {e}")
+
+        # Use core service's delta-aware recursive delete for remaining objects
         delete_result = self.service.delete_recursive(Bucket, Prefix)
+
+        # Aggregate results
+        single_deleted_count = len(single_results)
+        single_counts = {"delta": 0, "reference": 0, "direct": 0, "other": 0}
+        single_details = []
+        single_warnings: list[str] = []
+
+        for item in single_results:
+            result = item["result"]
+            requested_key = item["requested_key"]
+            actual_key = item["actual_key"]
+            result_type = result.get("type", "other")
+            if result_type not in single_counts:
+                result_type = "other"
+            single_counts[result_type] += 1
+            detail = {
+                "Key": requested_key,
+                "Type": result.get("type"),
+                "DependentDeltas": result.get("dependent_deltas", 0),
+                "Warnings": result.get("warnings", []),
+            }
+            if actual_key != requested_key:
+                detail["StoredKey"] = actual_key
+            single_details.append(detail)
+            warnings = result.get("warnings")
+            if warnings:
+                single_warnings.extend(warnings)
+
+        deleted_count = cast(int, delete_result.get("deleted_count", 0)) + single_deleted_count
+        failed_count = cast(int, delete_result.get("failed_count", 0)) + len(single_errors)
+
+        deltas_deleted = cast(int, delete_result.get("deltas_deleted", 0)) + single_counts["delta"]
+        references_deleted = (
+            cast(int, delete_result.get("references_deleted", 0)) + single_counts["reference"]
+        )
+        direct_deleted = cast(int, delete_result.get("direct_deleted", 0)) + single_counts["direct"]
+        other_deleted = cast(int, delete_result.get("other_deleted", 0)) + single_counts["other"]
 
         response = {
             "ResponseMetadata": {
                 "HTTPStatusCode": 200,
             },
-            "DeletedCount": delete_result.get("deleted_count", 0),
-            "FailedCount": delete_result.get("failed_count", 0),
+            "DeletedCount": deleted_count,
+            "FailedCount": failed_count,
             "DeltaGliderInfo": {
-                "DeltasDeleted": delete_result.get("deltas_deleted", 0),
-                "ReferencesDeleted": delete_result.get("references_deleted", 0),
-                "DirectDeleted": delete_result.get("direct_deleted", 0),
-                "OtherDeleted": delete_result.get("other_deleted", 0),
+                "DeltasDeleted": deltas_deleted,
+                "ReferencesDeleted": references_deleted,
+                "DirectDeleted": direct_deleted,
+                "OtherDeleted": other_deleted,
             },
         }
 
-        if delete_result.get("errors"):
-            response["Errors"] = delete_result["errors"]
+        errors = delete_result.get("errors")
+        if errors:
+            response["Errors"] = cast(list[str], errors)
 
-        if delete_result.get("warnings"):
-            response["Warnings"] = delete_result["warnings"]
+        warnings = delete_result.get("warnings")
+        if warnings:
+            response["Warnings"] = cast(list[str], warnings)
+
+        if single_errors:
+            errors_list = cast(list[str], response.setdefault("Errors", []))
+            errors_list.extend(single_errors)
+
+        if single_warnings:
+            warnings_list = cast(list[str], response.setdefault("Warnings", []))
+            warnings_list.extend(single_warnings)
+
+        if single_details:
+            response["DeltaGliderInfo"]["SingleDeletes"] = single_details  # type: ignore[index]
 
         return response
 

@@ -7,14 +7,13 @@ except ImportError:
     __version__ = "0.0.0+unknown"
 
 # Import client API
-from .client import (
+from .client import DeltaGliderClient, create_client
+from .client_models import (
     BucketStats,
     CompressionEstimate,
-    DeltaGliderClient,
     ListObjectsResponse,
     ObjectInfo,
     UploadSummary,
-    create_client,
 )
 from .core import DeltaService, DeltaSpace, ObjectKey
 
