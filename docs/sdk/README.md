@@ -101,6 +101,8 @@ client.put_object(Bucket='mybucket', Key='myfile.zip', Body=data)
 - **Data Integrity**: SHA256 verification on every operation
 - **Transparent**: Works with existing tools and workflows
 - **Production Ready**: Battle-tested with 200K+ files
+- **Thoroughly Tested**: 99 integration/unit tests with comprehensive coverage
+- **Type Safe**: Full mypy type checking, zero type errors
 
 ## When to Use DeltaGlider
 
