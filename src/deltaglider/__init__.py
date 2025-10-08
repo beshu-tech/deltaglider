@@ -17,12 +17,26 @@ from .client_models import (
 )
 from .core import DeltaService, DeltaSpace, ObjectKey
 
+# Import boto3-compatible type aliases (no boto3 import required!)
+from .types import (
+    CopyObjectResponse,
+    CreateBucketResponse,
+    DeleteObjectResponse,
+    DeleteObjectsResponse,
+    GetObjectResponse,
+    HeadObjectResponse,
+    ListBucketsResponse,
+    ListObjectsV2Response,
+    PutObjectResponse,
+    S3Object,
+)
+
 __all__ = [
     "__version__",
     # Client
     "DeltaGliderClient",
     "create_client",
-    # Data classes
+    # Data classes (legacy - will be deprecated in favor of TypedDict)
     "UploadSummary",
     "CompressionEstimate",
     "ObjectInfo",
@@ -32,4 +46,15 @@ __all__ = [
     "DeltaService",
     "DeltaSpace",
     "ObjectKey",
+    # boto3-compatible types (no boto3 import needed!)
+    "ListObjectsV2Response",
+    "PutObjectResponse",
+    "GetObjectResponse",
+    "DeleteObjectResponse",
+    "DeleteObjectsResponse",
+    "HeadObjectResponse",
+    "ListBucketsResponse",
+    "CreateBucketResponse",
+    "CopyObjectResponse",
+    "S3Object",
 ]
