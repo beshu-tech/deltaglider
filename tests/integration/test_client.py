@@ -10,7 +10,6 @@ from deltaglider import create_client
 from deltaglider.client import (
     BucketStats,
     CompressionEstimate,
-    ListObjectsResponse,
     ObjectInfo,
 )
 
@@ -279,27 +278,35 @@ class TestBoto3Compatibility:
         assert response["ContentLength"] == len(content)
 
     def test_list_objects(self, client):
-        """Test list_objects with various options."""
+        """Test list_objects with various options (boto3-compatible dict response)."""
         # List all objects (default: FetchMetadata=False)
         response = client.list_objects(Bucket="test-bucket")
 
-        assert isinstance(response, ListObjectsResponse)
-        assert response.key_count > 0
-        assert len(response.contents) > 0
+        # Response is now a boto3-compatible dict (not ListObjectsResponse)
+        assert isinstance(response, dict)
+        assert response["KeyCount"] > 0
+        assert len(response["Contents"]) > 0
+
+        # Verify S3Object structure
+        for obj in response["Contents"]:
+            assert "Key" in obj
+            assert "Size" in obj
+            assert "LastModified" in obj
+            assert "Metadata" in obj  # DeltaGlider metadata
 
         # Test with FetchMetadata=True (should only affect delta files)
         response_with_metadata = client.list_objects(Bucket="test-bucket", FetchMetadata=True)
-        assert isinstance(response_with_metadata, ListObjectsResponse)
-        assert response_with_metadata.key_count > 0
+        assert isinstance(response_with_metadata, dict)
+        assert response_with_metadata["KeyCount"] > 0
 
     def test_list_objects_with_delimiter(self, client):
-        """Test list_objects with delimiter for folder simulation."""
+        """Test list_objects with delimiter for folder simulation (boto3-compatible dict response)."""
         response = client.list_objects(Bucket="test-bucket", Prefix="", Delimiter="/")
 
         # Should have common prefixes for folders
-        assert len(response.common_prefixes) > 0
-        assert {"Prefix": "folder1/"} in response.common_prefixes
-        assert {"Prefix": "folder2/"} in response.common_prefixes
+        assert len(response.get("CommonPrefixes", [])) > 0
+        assert {"Prefix": "folder1/"} in response["CommonPrefixes"]
+        assert {"Prefix": "folder2/"} in response["CommonPrefixes"]
 
     def test_delete_object(self, client):
         """Test delete_object."""

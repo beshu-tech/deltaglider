@@ -10,7 +10,6 @@ This allows DeltaGlider to be a true drop-in replacement for boto3.s3.Client.
 from datetime import datetime
 from typing import Any, Literal, NotRequired, TypedDict
 
-
 # ============================================================================
 # S3 Object Types
 # ============================================================================

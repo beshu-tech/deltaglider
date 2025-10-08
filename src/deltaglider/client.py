@@ -10,7 +10,6 @@ from .client_delete_helpers import delete_with_delta_suffix
 from .client_models import (
     BucketStats,
     CompressionEstimate,
-    ListObjectsResponse,
     ObjectInfo,
     UploadSummary,
 )
@@ -197,7 +196,7 @@ class DeltaGliderClient:
         StartAfter: str | None = None,
         FetchMetadata: bool = False,
         **kwargs: Any,
-    ) -> ListObjectsResponse:
+    ) -> dict[str, Any]:
         """List objects in bucket with smart metadata fetching.
 
         This method optimizes performance by:
@@ -227,11 +226,11 @@ class DeltaGliderClient:
             # Fast listing for UI display (no metadata)
             response = client.list_objects(Bucket='releases', MaxKeys=100)
 
-            # Paginated listing
+            # Paginated listing (boto3-compatible dict response)
             response = client.list_objects(
                 Bucket='releases',
                 MaxKeys=50,
-                ContinuationToken=response.next_continuation_token
+                ContinuationToken=response.get('NextContinuationToken')
             )
 
             # Detailed listing with compression stats (slower, only for analytics)
@@ -265,7 +264,7 @@ class DeltaGliderClient:
                 "is_truncated": False,
             }
 
-        # Convert to ObjectInfo objects with smart metadata fetching
+        # Convert to boto3-compatible S3Object dicts
         contents = []
         for obj in result.get("objects", []):
             # Skip reference.bin files (internal files, never exposed to users)
@@ -280,20 +279,21 @@ class DeltaGliderClient:
             if is_delta:
                 display_key = display_key[:-6]  # Remove .delta suffix
 
-            # Create object info with basic data (no HEAD request)
-            info = ObjectInfo(
-                key=display_key,  # Use cleaned key without .delta
-                size=obj["size"],
-                last_modified=obj.get("last_modified", ""),
-                etag=obj.get("etag"),
-                storage_class=obj.get("storage_class", "STANDARD"),
-                # DeltaGlider fields
-                original_size=obj["size"],  # For non-delta, original = stored
-                compressed_size=obj["size"],
-                is_delta=is_delta,
-                compression_ratio=0.0 if not is_delta else None,
-                reference_key=None,
-            )
+            # Create boto3-compatible S3Object dict
+            s3_obj: dict[str, Any] = {
+                "Key": display_key,  # Use cleaned key without .delta
+                "Size": obj["size"],
+                "LastModified": obj.get("last_modified", ""),
+                "ETag": obj.get("etag"),
+                "StorageClass": obj.get("storage_class", "STANDARD"),
+            }
+
+            # Add DeltaGlider metadata in optional Metadata field
+            deltaglider_metadata: dict[str, str] = {
+                "deltaglider-is-delta": str(is_delta).lower(),
+                "deltaglider-original-size": str(obj["size"]),
+                "deltaglider-compression-ratio": "0.0" if not is_delta else "unknown",
+            }
 
             # SMART METADATA FETCHING:
             # 1. NEVER fetch metadata for non-delta files (no point)
@@ -304,28 +304,45 @@ class DeltaGliderClient:
                     if obj_head and obj_head.metadata:
                         metadata = obj_head.metadata
                         # Update with actual compression stats
-                        info.original_size = int(metadata.get("file_size", obj["size"]))
-                        info.compression_ratio = float(metadata.get("compression_ratio", 0.0))
-                        info.reference_key = metadata.get("ref_key")
+                        original_size = int(metadata.get("file_size", obj["size"]))
+                        compression_ratio = float(metadata.get("compression_ratio", 0.0))
+                        reference_key = metadata.get("ref_key")
+
+                        deltaglider_metadata["deltaglider-original-size"] = str(original_size)
+                        deltaglider_metadata["deltaglider-compression-ratio"] = str(compression_ratio)
+                        if reference_key:
+                            deltaglider_metadata["deltaglider-reference-key"] = reference_key
                 except Exception as e:
                     # Log but don't fail the listing
                     self.service.logger.debug(f"Failed to fetch metadata for {obj['key']}: {e}")
 
-            contents.append(info)
+            s3_obj["Metadata"] = deltaglider_metadata
+            contents.append(s3_obj)
 
-        # Build response with pagination support
-        response = ListObjectsResponse(
-            name=Bucket,
-            prefix=Prefix,
-            delimiter=Delimiter,
-            max_keys=MaxKeys,
-            contents=contents,
-            common_prefixes=[{"Prefix": p} for p in result.get("common_prefixes", [])],
-            is_truncated=result.get("is_truncated", False),
-            next_continuation_token=result.get("next_continuation_token"),
-            continuation_token=ContinuationToken,
-            key_count=len(contents),
-        )
+        # Build boto3-compatible response dict
+        response: dict[str, Any] = {
+            "Contents": contents,
+            "Name": Bucket,
+            "Prefix": Prefix,
+            "KeyCount": len(contents),
+            "MaxKeys": MaxKeys,
+        }
+
+        # Add optional fields
+        if Delimiter:
+            response["Delimiter"] = Delimiter
+
+        common_prefixes = result.get("common_prefixes", [])
+        if common_prefixes:
+            response["CommonPrefixes"] = [{"Prefix": p} for p in common_prefixes]
+
+        if result.get("is_truncated"):
+            response["IsTruncated"] = True
+            if result.get("next_continuation_token"):
+                response["NextContinuationToken"] = result["next_continuation_token"]
+
+        if ContinuationToken:
+            response["ContinuationToken"] = ContinuationToken
 
         return response
 
@@ -987,12 +1004,13 @@ class DeltaGliderClient:
         base_name = Path(filename).stem
         ext = Path(filename).suffix
 
-        for obj in response.contents:
-            obj_base = Path(obj.key).stem
-            obj_ext = Path(obj.key).suffix
+        for obj in response["Contents"]:
+            obj_key = obj["Key"]
+            obj_base = Path(obj_key).stem
+            obj_ext = Path(obj_key).suffix
 
             # Skip delta files and references
-            if obj.key.endswith(".delta") or obj.key.endswith("reference.bin"):
+            if obj_key.endswith(".delta") or obj_key.endswith("reference.bin"):
                 continue
 
             score = 0.0
@@ -1014,10 +1032,10 @@ class DeltaGliderClient:
             if score > 0.5:
                 similar.append(
                     {
-                        "Key": obj.key,
-                        "Size": obj.size,
+                        "Key": obj_key,
+                        "Size": obj["Size"],
                         "Similarity": score,
-                        "LastModified": obj.last_modified,
+                        "LastModified": obj["LastModified"],
                     }
                 )
 
@@ -1103,12 +1121,40 @@ class DeltaGliderClient:
                 FetchMetadata=detailed_stats,  # Only fetch metadata if detailed stats requested
             )
 
-            all_objects.extend(response.contents)
+            # Extract S3Objects from response (with Metadata containing DeltaGlider info)
+            for obj_dict in response["Contents"]:
+                # Convert dict back to ObjectInfo for backward compatibility with stats calculation
+                metadata = obj_dict.get("Metadata", {})
+                # Parse compression ratio safely (handle "unknown" value)
+                compression_ratio_str = metadata.get("deltaglider-compression-ratio", "0.0")
+                try:
+                    compression_ratio = (
+                        float(compression_ratio_str)
+                        if compression_ratio_str != "unknown"
+                        else 0.0
+                    )
+                except ValueError:
+                    compression_ratio = 0.0
 
-            if not response.is_truncated:
+                all_objects.append(
+                    ObjectInfo(
+                        key=obj_dict["Key"],
+                        size=obj_dict["Size"],
+                        last_modified=obj_dict.get("LastModified", ""),
+                        etag=obj_dict.get("ETag"),
+                        storage_class=obj_dict.get("StorageClass", "STANDARD"),
+                        original_size=int(metadata.get("deltaglider-original-size", obj_dict["Size"])),
+                        compressed_size=obj_dict["Size"],
+                        is_delta=metadata.get("deltaglider-is-delta", "false") == "true",
+                        compression_ratio=compression_ratio,
+                        reference_key=metadata.get("deltaglider-reference-key"),
+                    )
+                )
+
+            if not response.get("IsTruncated"):
                 break
 
-            continuation_token = response.next_continuation_token
+            continuation_token = response.get("NextContinuationToken")
 
         # Calculate statistics
         total_size = 0

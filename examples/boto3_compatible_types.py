@@ -1,7 +1,11 @@
-"""Example: Using boto3-compatible types without importing boto3.
+"""Example: Using boto3-compatible responses without importing boto3.
 
-This demonstrates how DeltaGlider provides full type safety without
-requiring boto3 imports in user code.
+This demonstrates how DeltaGlider provides full type safety and boto3 compatibility
+without requiring boto3 imports in user code.
+
+As of v5.0.0, DeltaGlider returns plain dicts (not custom dataclasses) that are
+100% compatible with boto3 S3 responses. You get IDE autocomplete through TypedDict
+type hints without any runtime overhead.
 """
 
 from deltaglider import ListObjectsV2Response, S3Object, create_client
@@ -17,12 +21,19 @@ def process_files(bucket: str, prefix: str) -> None:
         Bucket=bucket, Prefix=prefix, Delimiter="/"
     )
 
+    # Response is a plain dict - 100% boto3-compatible
     # TypedDict provides autocomplete and type checking
     for obj in response["Contents"]:
         # obj is typed as S3Object - all fields have autocomplete!
         key: str = obj["Key"]  # ✅ IDE knows this is str
         size: int = obj["Size"]  # ✅ IDE knows this is int
         print(f"{key}: {size} bytes")
+
+        # DeltaGlider metadata is in the standard Metadata field
+        metadata = obj.get("Metadata", {})
+        if metadata.get("deltaglider-is-delta") == "true":
+            compression = metadata.get("deltaglider-compression-ratio", "unknown")
+            print(f"  └─ Delta file (compression: {compression})")
 
     # Optional fields work too
     for prefix_dict in response.get("CommonPrefixes", []):
@@ -49,3 +60,5 @@ if __name__ == "__main__":
     print("✅ Full type safety without boto3 imports!")
     print("✅ 100% compatible with boto3")
     print("✅ Drop-in replacement")
+    print("✅ Plain dict responses (not custom dataclasses)")
+    print("✅ DeltaGlider metadata in standard Metadata field")

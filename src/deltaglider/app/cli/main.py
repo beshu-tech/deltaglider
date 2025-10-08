@@ -259,18 +259,18 @@ def ls(
                 return f"{size_float:.1f}P"
 
             # List objects using SDK (automatically filters .delta and reference.bin)
-            from deltaglider.client import DeltaGliderClient, ListObjectsResponse
+            from deltaglider.client import DeltaGliderClient
 
             client = DeltaGliderClient(service)
-            dg_response: ListObjectsResponse = client.list_objects(
+            dg_response = client.list_objects(
                 Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000, Delimiter="/" if not recursive else ""
             )
-            objects = dg_response.contents
+            objects = dg_response["Contents"]
 
             # Filter by recursive flag
             if not recursive:
                 # Show common prefixes (subdirectories) from S3 response
-                for common_prefix in dg_response.common_prefixes:
+                for common_prefix in dg_response.get("CommonPrefixes", []):
                     prefix_path = common_prefix.get("Prefix", "")
                     # Show only the directory name, not the full path
                     if prefix_str:
@@ -283,7 +283,8 @@ def ls(
                 # Only show files at current level (not in subdirectories)
                 filtered_objects = []
                 for obj in objects:
-                    rel_path = obj.key[len(prefix_str):] if prefix_str else obj.key
+                    obj_key = obj["Key"]
+                    rel_path = obj_key[len(prefix_str):] if prefix_str else obj_key
                     # Only include if it's a direct child (no / in relative path)
                     if "/" not in rel_path and rel_path:
                         filtered_objects.append(obj)
@@ -294,23 +295,24 @@ def ls(
             total_count = 0
 
             for obj in objects:
-                total_size += obj.size
+                total_size += obj["Size"]
                 total_count += 1
 
                 # Format the display
-                size_str = format_bytes(obj.size)
+                size_str = format_bytes(obj["Size"])
                 # last_modified is a string from SDK, parse it if needed
-                if isinstance(obj.last_modified, str):
+                last_modified = obj.get("LastModified", "")
+                if isinstance(last_modified, str):
                     # Already a string, extract date portion
-                    date_str = obj.last_modified[:19].replace("T", " ")
+                    date_str = last_modified[:19].replace("T", " ")
                 else:
-                    date_str = obj.last_modified.strftime("%Y-%m-%d %H:%M:%S")
+                    date_str = last_modified.strftime("%Y-%m-%d %H:%M:%S")
 
                 # Show only the filename relative to current prefix (like AWS CLI)
                 if prefix_str:
-                    display_key = obj.key[len(prefix_str):]
+                    display_key = obj["Key"][len(prefix_str):]
                 else:
-                    display_key = obj.key
+                    display_key = obj["Key"]
 
                 click.echo(f"{date_str} {size_str:>10} {display_key}")
 

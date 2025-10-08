@@ -53,8 +53,11 @@ class TestSDKFiltering:
         client = DeltaGliderClient(service)
         response = client.list_objects(Bucket="test-bucket", Prefix="releases/")
 
+        # Response is now a boto3-compatible dict
+        contents = response["Contents"]
+
         # Verify .delta suffix is stripped
-        keys = [obj.key for obj in response.contents]
+        keys = [obj["Key"] for obj in contents]
         assert "releases/app-v1.zip" in keys
         assert "releases/app-v2.zip" in keys
         assert "releases/README.md" in keys
@@ -63,8 +66,12 @@ class TestSDKFiltering:
         for key in keys:
             assert not key.endswith(".delta"), f"Found .delta suffix in: {key}"
 
-        # Verify is_delta flag is set correctly
-        delta_objects = [obj for obj in response.contents if obj.is_delta]
+        # Verify is_delta flag is set correctly in Metadata
+        delta_objects = [
+            obj
+            for obj in contents
+            if obj.get("Metadata", {}).get("deltaglider-is-delta") == "true"
+        ]
         assert len(delta_objects) == 2
 
     def test_list_objects_filters_reference_bin(self):
@@ -106,15 +113,18 @@ class TestSDKFiltering:
         client = DeltaGliderClient(service)
         response = client.list_objects(Bucket="test-bucket", Prefix="releases/")
 
+        # Response is now a boto3-compatible dict
+        contents = response["Contents"]
+
         # Verify NO reference.bin files in output
-        keys = [obj.key for obj in response.contents]
+        keys = [obj["Key"] for obj in contents]
         for key in keys:
             assert not key.endswith("reference.bin"), f"Found reference.bin in: {key}"
 
         # Should only have the app.zip (with .delta stripped)
-        assert len(response.contents) == 1
-        assert response.contents[0].key == "releases/app.zip"
-        assert response.contents[0].is_delta is True
+        assert len(contents) == 1
+        assert contents[0]["Key"] == "releases/app.zip"
+        assert contents[0].get("Metadata", {}).get("deltaglider-is-delta") == "true"
 
     def test_list_objects_combined_filtering(self):
         """Test filtering of both .delta and reference.bin together."""
@@ -170,12 +180,15 @@ class TestSDKFiltering:
         client = DeltaGliderClient(service)
         response = client.list_objects(Bucket="test-bucket", Prefix="data/")
 
+        # Response is now a boto3-compatible dict
+        contents = response["Contents"]
+
         # Should filter out 2 reference.bin files
         # Should strip .delta from 3 files
         # Should keep 1 regular file as-is
-        assert len(response.contents) == 4  # 3 deltas + 1 regular file
+        assert len(contents) == 4  # 3 deltas + 1 regular file
 
-        keys = [obj.key for obj in response.contents]
+        keys = [obj["Key"] for obj in contents]
         expected_keys = ["data/file1.zip", "data/file2.zip", "data/file3.txt", "data/sub/app.jar"]
         assert sorted(keys) == sorted(expected_keys)
 
