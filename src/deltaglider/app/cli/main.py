@@ -306,7 +306,13 @@ def ls(
                 else:
                     date_str = obj.last_modified.strftime("%Y-%m-%d %H:%M:%S")
 
-                click.echo(f"{date_str} {size_str:>10} s3://{bucket_name}/{obj.key}")
+                # Show only the filename relative to current prefix (like AWS CLI)
+                if prefix_str:
+                    display_key = obj.key[len(prefix_str):]
+                else:
+                    display_key = obj.key
+
+                click.echo(f"{date_str} {size_str:>10} {display_key}")
 
             # Show summary if requested
             if summarize:
