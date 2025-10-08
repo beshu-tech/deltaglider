@@ -240,6 +240,13 @@ def ls(
             prefix_str: str
             bucket_name, prefix_str = parse_s3_url(s3_url)
 
+            # Ensure prefix ends with / if it's meant to be a directory
+            # This helps with proper path handling
+            if prefix_str and not prefix_str.endswith("/"):
+                # Check if this is a file or directory by listing
+                # For now, assume it's a directory prefix
+                prefix_str = prefix_str + "/"
+
             # Format bytes to human readable
             def format_bytes(size: int) -> str:
                 if not human_readable:
@@ -256,29 +263,30 @@ def ls(
 
             client = DeltaGliderClient(service)
             dg_response: ListObjectsResponse = client.list_objects(
-                Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000
+                Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000, Delimiter="/" if not recursive else ""
             )
             objects = dg_response.contents
 
             # Filter by recursive flag
             if not recursive:
-                # Only show direct children
-                seen_prefixes = set()
+                # Show common prefixes (subdirectories) from S3 response
+                for common_prefix in dg_response.common_prefixes:
+                    prefix_path = common_prefix.get("Prefix", "")
+                    # Show only the directory name, not the full path
+                    if prefix_str:
+                        # Strip the current prefix to show only the subdirectory
+                        display_name = prefix_path[len(prefix_str):]
+                    else:
+                        display_name = prefix_path
+                    click.echo(f"                           PRE {display_name}")
+
+                # Only show files at current level (not in subdirectories)
                 filtered_objects = []
                 for obj in objects:
-                    rel_path = obj.key[len(prefix_str) :] if prefix_str else obj.key
-                    if "/" in rel_path:
-                        # It's in a subdirectory
-                        subdir = rel_path.split("/")[0] + "/"
-                        if subdir not in seen_prefixes:
-                            seen_prefixes.add(subdir)
-                            # Show as directory
-                            full_prefix = f"{prefix_str}{subdir}" if prefix_str else subdir
-                            click.echo(f"                           PRE {full_prefix}")
-                    else:
-                        # Direct file
-                        if rel_path:  # Only add if there's actually a file at this level
-                            filtered_objects.append(obj)
+                    rel_path = obj.key[len(prefix_str):] if prefix_str else obj.key
+                    # Only include if it's a direct child (no / in relative path)
+                    if "/" not in rel_path and rel_path:
+                        filtered_objects.append(obj)
                 objects = filtered_objects
 
             # Display objects (SDK already filters reference.bin and strips .delta)
