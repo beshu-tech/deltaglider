@@ -38,10 +38,21 @@ response = client.get_object(Bucket='releases', Key='v1.0.0/app.zip')
 # Optimized list_objects with smart performance defaults (NEW!)
 # Fast by default - no unnecessary metadata fetching
 response = client.list_objects(Bucket='releases', Prefix='v1.0.0/')
+for obj in response['Contents']:
+    print(f"{obj['Key']}: {obj['Size']} bytes")
 
 # Pagination for large buckets
-response = client.list_objects(Bucket='releases', MaxKeys=100,
-                              ContinuationToken=response.next_continuation_token)
+response = client.list_objects(Bucket='releases', MaxKeys=100)
+while response.get('IsTruncated'):
+    # Process current page
+    for obj in response['Contents']:
+        print(obj['Key'])
+    # Get next page
+    response = client.list_objects(
+        Bucket='releases',
+        MaxKeys=100,
+        ContinuationToken=response.get('NextContinuationToken')
+    )
 
 # Get detailed compression stats only when needed
 response = client.list_objects(Bucket='releases', FetchMetadata=True)  # Slower but detailed
