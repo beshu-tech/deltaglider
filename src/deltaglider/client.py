@@ -1,5 +1,6 @@
 """DeltaGlider client with boto3-compatible APIs and advanced features."""
 
+# ruff: noqa: I001
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -13,8 +14,33 @@ from .client_models import (
     ObjectInfo,
     UploadSummary,
 )
+
+# fmt: off - Keep all client_operations imports together
+from .client_operations import (
+    create_bucket as _create_bucket,
+    delete_bucket as _delete_bucket,
+    download_batch as _download_batch,
+    estimate_compression as _estimate_compression,
+    find_similar_files as _find_similar_files,
+    generate_presigned_post as _generate_presigned_post,
+    generate_presigned_url as _generate_presigned_url,
+    get_bucket_stats as _get_bucket_stats,
+    get_object_info as _get_object_info,
+    list_buckets as _list_buckets,
+    upload_batch as _upload_batch,
+    upload_chunked as _upload_chunked,
+)
+# fmt: on
+
 from .core import DeltaService, DeltaSpace, ObjectKey
 from .core.errors import NotFoundError
+from .response_builders import (
+    build_delete_response,
+    build_get_response,
+    build_list_objects_response,
+    build_put_response,
+)
+from .types import CommonPrefix, S3Object
 
 
 class DeltaGliderClient:
@@ -122,21 +148,33 @@ class DeltaGliderClient:
             # Calculate ETag from file content
             sha256_hash = self.service.hasher.sha256(tmp_path)
 
-            # Return boto3-compatible response with delta info
-            return {
-                "ETag": f'"{sha256_hash}"',
-                "ResponseMetadata": {
-                    "HTTPStatusCode": 200,
-                },
-                "DeltaGlider": {
-                    "original_size": summary.file_size,
-                    "stored_size": summary.delta_size or summary.file_size,
-                    "is_delta": summary.delta_size is not None,
-                    "compression_ratio": summary.delta_ratio or 1.0,
-                    "stored_as": summary.key,
-                    "operation": summary.operation,
-                },
+            # Build DeltaGlider compression info
+            deltaglider_info: dict[str, Any] = {
+                "OriginalSizeMB": summary.file_size / (1024 * 1024),
+                "StoredSizeMB": (summary.delta_size or summary.file_size) / (1024 * 1024),
+                "IsDelta": summary.delta_size is not None,
+                "CompressionRatio": summary.delta_ratio or 1.0,
+                "SavingsPercent": (
+                    (
+                        (summary.file_size - (summary.delta_size or summary.file_size))
+                        / summary.file_size
+                        * 100
+                    )
+                    if summary.file_size > 0
+                    else 0.0
+                ),
+                "StoredAs": summary.key,
+                "Operation": summary.operation,
             }
+
+            # Return as dict[str, Any] for public API (TypedDict is a dict at runtime!)
+            return cast(
+                dict[str, Any],
+                build_put_response(
+                    etag=f'"{sha256_hash}"',
+                    deltaglider_info=deltaglider_info,
+                ),
+            )
         finally:
             # Clean up temp file
             if tmp_path.exists():
@@ -172,19 +210,19 @@ class DeltaGliderClient:
 
         # Get metadata
         obj_head = self.service.storage.head(f"{Bucket}/{Key}")
+        file_size = tmp_path.stat().st_size
+        etag = f'"{self.service.hasher.sha256(tmp_path)}"'
 
-        return {
-            "Body": body,  # File-like object
-            "ContentLength": tmp_path.stat().st_size,
-            "ContentType": obj_head.metadata.get("content_type", "binary/octet-stream")
-            if obj_head
-            else "binary/octet-stream",
-            "ETag": f'"{self.service.hasher.sha256(tmp_path)}"',
-            "Metadata": obj_head.metadata if obj_head else {},
-            "ResponseMetadata": {
-                "HTTPStatusCode": 200,
-            },
-        }
+        # Return as dict[str, Any] for public API (TypedDict is a dict at runtime!)
+        return cast(
+            dict[str, Any],
+            build_get_response(
+                body=body,  # type: ignore[arg-type]  # File object is compatible with bytes
+                content_length=file_size,
+                etag=etag,
+                metadata=obj_head.metadata if obj_head else {},
+            ),
+        )
 
     def list_objects(
         self,
@@ -264,8 +302,8 @@ class DeltaGliderClient:
                 "is_truncated": False,
             }
 
-        # Convert to boto3-compatible S3Object dicts
-        contents = []
+        # Convert to boto3-compatible S3Object TypedDicts (type-safe!)
+        contents: list[S3Object] = []
         for obj in result.get("objects", []):
             # Skip reference.bin files (internal files, never exposed to users)
             if obj["key"].endswith("/reference.bin") or obj["key"] == "reference.bin":
@@ -279,16 +317,7 @@ class DeltaGliderClient:
             if is_delta:
                 display_key = display_key[:-6]  # Remove .delta suffix
 
-            # Create boto3-compatible S3Object dict
-            s3_obj: dict[str, Any] = {
-                "Key": display_key,  # Use cleaned key without .delta
-                "Size": obj["size"],
-                "LastModified": obj.get("last_modified", ""),
-                "ETag": obj.get("etag"),
-                "StorageClass": obj.get("storage_class", "STANDARD"),
-            }
-
-            # Add DeltaGlider metadata in optional Metadata field
+            # Build DeltaGlider metadata
             deltaglider_metadata: dict[str, str] = {
                 "deltaglider-is-delta": str(is_delta).lower(),
                 "deltaglider-original-size": str(obj["size"]),
@@ -318,35 +347,38 @@ class DeltaGliderClient:
                     # Log but don't fail the listing
                     self.service.logger.debug(f"Failed to fetch metadata for {obj['key']}: {e}")
 
-            s3_obj["Metadata"] = deltaglider_metadata
+            # Create boto3-compatible S3Object TypedDict - mypy validates structure!
+            s3_obj: S3Object = {
+                "Key": display_key,  # Use cleaned key without .delta
+                "Size": obj["size"],
+                "LastModified": obj.get("last_modified", ""),
+                "ETag": obj.get("etag"),
+                "StorageClass": obj.get("storage_class", "STANDARD"),
+                "Metadata": deltaglider_metadata,
+            }
             contents.append(s3_obj)
 
-        # Build boto3-compatible response dict
-        response: dict[str, Any] = {
-            "Contents": contents,
-            "Name": Bucket,
-            "Prefix": Prefix,
-            "KeyCount": len(contents),
-            "MaxKeys": MaxKeys,
-        }
-
-        # Add optional fields
-        if Delimiter:
-            response["Delimiter"] = Delimiter
-
+        # Build type-safe boto3-compatible CommonPrefix TypedDicts
         common_prefixes = result.get("common_prefixes", [])
-        if common_prefixes:
-            response["CommonPrefixes"] = [{"Prefix": p} for p in common_prefixes]
+        common_prefix_dicts: list[CommonPrefix] | None = (
+            [CommonPrefix(Prefix=p) for p in common_prefixes] if common_prefixes else None
+        )
 
-        if result.get("is_truncated"):
-            response["IsTruncated"] = True
-            if result.get("next_continuation_token"):
-                response["NextContinuationToken"] = result["next_continuation_token"]
-
-        if ContinuationToken:
-            response["ContinuationToken"] = ContinuationToken
-
-        return response
+        # Return as dict[str, Any] for public API (TypedDict is a dict at runtime!)
+        return cast(
+            dict[str, Any],
+            build_list_objects_response(
+                bucket=Bucket,
+                prefix=Prefix,
+                delimiter=Delimiter,
+                max_keys=MaxKeys,
+                contents=contents,
+                common_prefixes=common_prefix_dicts,
+                is_truncated=result.get("is_truncated", False),
+                next_continuation_token=result.get("next_continuation_token"),
+                continuation_token=ContinuationToken,
+            ),
+        )
 
     def delete_object(
         self,
@@ -366,32 +398,31 @@ class DeltaGliderClient:
         """
         _, delete_result = delete_with_delta_suffix(self.service, Bucket, Key)
 
-        response = {
-            "DeleteMarker": False,
-            "ResponseMetadata": {
-                "HTTPStatusCode": 204,
-            },
-            "DeltaGliderInfo": {
-                "Type": delete_result.get("type"),
-                "Deleted": delete_result.get("deleted", False),
-            },
+        # Build DeltaGlider-specific info
+        deltaglider_info: dict[str, Any] = {
+            "Type": delete_result.get("type"),
+            "Deleted": delete_result.get("deleted", False),
         }
 
         # Add warnings if any
         warnings = delete_result.get("warnings")
         if warnings:
-            delta_info = response.get("DeltaGliderInfo")
-            if delta_info and isinstance(delta_info, dict):
-                delta_info["Warnings"] = warnings
+            deltaglider_info["Warnings"] = warnings
 
         # Add dependent delta count for references
         dependent_deltas = delete_result.get("dependent_deltas")
         if dependent_deltas:
-            delta_info = response.get("DeltaGliderInfo")
-            if delta_info and isinstance(delta_info, dict):
-                delta_info["DependentDeltas"] = dependent_deltas
+            deltaglider_info["DependentDeltas"] = dependent_deltas
 
-        return response
+        # Return as dict[str, Any] for public API (TypedDict is a dict at runtime!)
+        return cast(
+            dict[str, Any],
+            build_delete_response(
+                delete_marker=False,
+                status_code=204,
+                deltaglider_info=deltaglider_info,
+            ),
+        )
 
     def delete_objects(
         self,
@@ -779,40 +810,9 @@ class DeltaGliderClient:
                 progress_callback=on_progress
             )
         """
-        file_path = Path(file_path)
-        file_size = file_path.stat().st_size
-
-        # For small files, just use regular upload
-        if file_size <= chunk_size:
-            if progress_callback:
-                progress_callback(1, 1, file_size, file_size)
-            return self.upload(file_path, s3_url, max_ratio=max_ratio)
-
-        # Calculate chunks
-        total_chunks = (file_size + chunk_size - 1) // chunk_size
-
-        # Create a temporary file for chunked processing
-        # For now, we read the entire file but report progress in chunks
-        # Future enhancement: implement true streaming upload in storage adapter
-        bytes_read = 0
-
-        with open(file_path, "rb") as f:
-            for chunk_num in range(1, total_chunks + 1):
-                # Read chunk (simulated for progress reporting)
-                chunk_data = f.read(chunk_size)
-                bytes_read += len(chunk_data)
-
-                if progress_callback:
-                    progress_callback(chunk_num, total_chunks, bytes_read, file_size)
-
-        # Perform the actual upload
-        # TODO: When storage adapter supports streaming, pass chunks directly
-        result = self.upload(file_path, s3_url, max_ratio=max_ratio)
-
-        # Final progress callback
-        if progress_callback:
-            progress_callback(total_chunks, total_chunks, file_size, file_size)
-
+        result: UploadSummary = _upload_chunked(
+            self, file_path, s3_url, chunk_size, progress_callback, max_ratio
+        )
         return result
 
     def upload_batch(
@@ -833,20 +833,7 @@ class DeltaGliderClient:
         Returns:
             List of UploadSummary objects
         """
-        results = []
-
-        for i, file_path in enumerate(files):
-            file_path = Path(file_path)
-
-            if progress_callback:
-                progress_callback(file_path.name, i + 1, len(files))
-
-            # Upload each file
-            s3_url = f"{s3_prefix.rstrip('/')}/{file_path.name}"
-            summary = self.upload(file_path, s3_url, max_ratio=max_ratio)
-            results.append(summary)
-
-        return results
+        return _upload_batch(self, files, s3_prefix, max_ratio, progress_callback)
 
     def download_batch(
         self,
@@ -864,24 +851,7 @@ class DeltaGliderClient:
         Returns:
             List of downloaded file paths
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        results = []
-
-        for i, s3_url in enumerate(s3_urls):
-            # Extract filename from URL
-            filename = s3_url.split("/")[-1]
-            if filename.endswith(".delta"):
-                filename = filename[:-6]  # Remove .delta suffix
-
-            if progress_callback:
-                progress_callback(filename, i + 1, len(s3_urls))
-
-            output_path = output_dir / filename
-            self.download(s3_url, output_path)
-            results.append(output_path)
-
-        return results
+        return _download_batch(self, s3_urls, output_dir, progress_callback)
 
     def estimate_compression(
         self,
@@ -901,80 +871,10 @@ class DeltaGliderClient:
         Returns:
             CompressionEstimate with predicted compression
         """
-        file_path = Path(file_path)
-        file_size = file_path.stat().st_size
-
-        # Check file extension
-        ext = file_path.suffix.lower()
-        delta_extensions = {
-            ".zip",
-            ".tar",
-            ".gz",
-            ".tar.gz",
-            ".tgz",
-            ".bz2",
-            ".tar.bz2",
-            ".xz",
-            ".tar.xz",
-            ".7z",
-            ".rar",
-            ".dmg",
-            ".iso",
-            ".pkg",
-            ".deb",
-            ".rpm",
-            ".apk",
-            ".jar",
-            ".war",
-            ".ear",
-        }
-
-        # Already compressed formats that won't benefit from delta
-        incompressible = {".jpg", ".jpeg", ".png", ".mp4", ".mp3", ".avi", ".mov"}
-
-        if ext in incompressible:
-            return CompressionEstimate(
-                original_size=file_size,
-                estimated_compressed_size=file_size,
-                estimated_ratio=0.0,
-                confidence=0.95,
-                should_use_delta=False,
-            )
-
-        if ext not in delta_extensions:
-            # Unknown type, conservative estimate
-            return CompressionEstimate(
-                original_size=file_size,
-                estimated_compressed_size=file_size,
-                estimated_ratio=0.0,
-                confidence=0.5,
-                should_use_delta=file_size > 1024 * 1024,  # Only for files > 1MB
-            )
-
-        # Look for similar files in the target location
-        similar_files = self.find_similar_files(bucket, prefix, file_path.name)
-
-        if similar_files:
-            # If we have similar files, estimate high compression
-            estimated_ratio = 0.99  # 99% compression typical for similar versions
-            confidence = 0.9
-            recommended_ref = similar_files[0]["Key"] if similar_files else None
-        else:
-            # First file of its type
-            estimated_ratio = 0.0
-            confidence = 0.7
-            recommended_ref = None
-
-        estimated_size = int(file_size * (1 - estimated_ratio))
-
-        return CompressionEstimate(
-            original_size=file_size,
-            estimated_compressed_size=estimated_size,
-            estimated_ratio=estimated_ratio,
-            confidence=confidence,
-            recommended_reference=recommended_ref,
-            should_use_delta=True,
+        result: CompressionEstimate = _estimate_compression(
+            self, file_path, bucket, prefix, sample_size
         )
+        return result
 
     def find_similar_files(
         self,
@@ -994,57 +894,7 @@ class DeltaGliderClient:
         Returns:
             List of similar files with scores
         """
-        # List objects in the prefix (no metadata needed for similarity check)
-        response = self.list_objects(
-            Bucket=bucket,
-            Prefix=prefix,
-            MaxKeys=1000,
-            FetchMetadata=False,  # Don't need metadata for similarity
-        )
-
-        similar: list[dict[str, Any]] = []
-        base_name = Path(filename).stem
-        ext = Path(filename).suffix
-
-        for obj in response["Contents"]:
-            obj_key = obj["Key"]
-            obj_base = Path(obj_key).stem
-            obj_ext = Path(obj_key).suffix
-
-            # Skip delta files and references
-            if obj_key.endswith(".delta") or obj_key.endswith("reference.bin"):
-                continue
-
-            score = 0.0
-
-            # Extension match
-            if ext == obj_ext:
-                score += 0.5
-
-            # Base name similarity
-            if base_name in obj_base or obj_base in base_name:
-                score += 0.3
-
-            # Version pattern match
-            import re
-
-            if re.search(r"v?\d+[\.\d]*", base_name) and re.search(r"v?\d+[\.\d]*", obj_base):
-                score += 0.2
-
-            if score > 0.5:
-                similar.append(
-                    {
-                        "Key": obj_key,
-                        "Size": obj["Size"],
-                        "Similarity": score,
-                        "LastModified": obj["LastModified"],
-                    }
-                )
-
-        # Sort by similarity
-        similar.sort(key=lambda x: x["Similarity"], reverse=True)  # type: ignore
-
-        return similar[:limit]
+        return _find_similar_files(self, bucket, prefix, filename, limit)
 
     def get_object_info(self, s3_url: str) -> ObjectInfo:
         """Get detailed object information including compression stats.
@@ -1055,34 +905,8 @@ class DeltaGliderClient:
         Returns:
             ObjectInfo with detailed metadata
         """
-        # Parse URL
-        if not s3_url.startswith("s3://"):
-            raise ValueError(f"Invalid S3 URL: {s3_url}")
-
-        s3_path = s3_url[5:]
-        parts = s3_path.split("/", 1)
-        bucket = parts[0]
-        key = parts[1] if len(parts) > 1 else ""
-
-        # Get object metadata
-        obj_head = self.service.storage.head(f"{bucket}/{key}")
-        if not obj_head:
-            raise FileNotFoundError(f"Object not found: {s3_url}")
-
-        metadata = obj_head.metadata
-        is_delta = key.endswith(".delta")
-
-        return ObjectInfo(
-            key=key,
-            size=obj_head.size,
-            last_modified=metadata.get("last_modified", ""),
-            etag=metadata.get("etag"),
-            original_size=int(metadata.get("file_size", obj_head.size)),
-            compressed_size=obj_head.size,
-            compression_ratio=float(metadata.get("compression_ratio", 0.0)),
-            is_delta=is_delta,
-            reference_key=metadata.get("ref_key"),
-        )
+        result: ObjectInfo = _get_object_info(self, s3_url)
+        return result
 
     def get_bucket_stats(self, bucket: str, detailed_stats: bool = False) -> BucketStats:
         """Get statistics for a bucket with optional detailed compression metrics.
@@ -1111,104 +935,8 @@ class DeltaGliderClient:
             stats = client.get_bucket_stats('releases', detailed_stats=True)
             print(f"Compression ratio: {stats.average_compression_ratio:.1%}")
         """
-        # List all objects with smart metadata fetching
-        all_objects = []
-        continuation_token = None
-
-        while True:
-            response = self.list_objects(
-                Bucket=bucket,
-                MaxKeys=1000,
-                ContinuationToken=continuation_token,
-                FetchMetadata=detailed_stats,  # Only fetch metadata if detailed stats requested
-            )
-
-            # Extract S3Objects from response (with Metadata containing DeltaGlider info)
-            for obj_dict in response["Contents"]:
-                # Convert dict back to ObjectInfo for backward compatibility with stats calculation
-                metadata = obj_dict.get("Metadata", {})
-                # Parse compression ratio safely (handle "unknown" value)
-                compression_ratio_str = metadata.get("deltaglider-compression-ratio", "0.0")
-                try:
-                    compression_ratio = (
-                        float(compression_ratio_str) if compression_ratio_str != "unknown" else 0.0
-                    )
-                except ValueError:
-                    compression_ratio = 0.0
-
-                all_objects.append(
-                    ObjectInfo(
-                        key=obj_dict["Key"],
-                        size=obj_dict["Size"],
-                        last_modified=obj_dict.get("LastModified", ""),
-                        etag=obj_dict.get("ETag"),
-                        storage_class=obj_dict.get("StorageClass", "STANDARD"),
-                        original_size=int(
-                            metadata.get("deltaglider-original-size", obj_dict["Size"])
-                        ),
-                        compressed_size=obj_dict["Size"],
-                        is_delta=metadata.get("deltaglider-is-delta", "false") == "true",
-                        compression_ratio=compression_ratio,
-                        reference_key=metadata.get("deltaglider-reference-key"),
-                    )
-                )
-
-            if not response.get("IsTruncated"):
-                break
-
-            continuation_token = response.get("NextContinuationToken")
-
-        # Calculate statistics
-        total_size = 0
-        compressed_size = 0
-        delta_count = 0
-        direct_count = 0
-
-        for obj in all_objects:
-            compressed_size += obj.size
-
-            if obj.is_delta:
-                delta_count += 1
-                # Use actual original size if we have it, otherwise estimate
-                total_size += obj.original_size or obj.size
-            else:
-                direct_count += 1
-                # For non-delta files, original equals compressed
-                total_size += obj.size
-
-        space_saved = total_size - compressed_size
-        avg_ratio = (space_saved / total_size) if total_size > 0 else 0.0
-
-        return BucketStats(
-            bucket=bucket,
-            object_count=len(all_objects),
-            total_size=total_size,
-            compressed_size=compressed_size,
-            space_saved=space_saved,
-            average_compression_ratio=avg_ratio,
-            delta_objects=delta_count,
-            direct_objects=direct_count,
-        )
-
-    def _try_boto3_presigned_operation(self, operation: str, **kwargs: Any) -> Any | None:
-        """Try to generate presigned operation using boto3 client, return None if not available."""
-        storage_adapter = self.service.storage
-
-        # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, "client"):
-            try:
-                if operation == "url":
-                    return str(storage_adapter.client.generate_presigned_url(**kwargs))
-                elif operation == "post":
-                    return dict(storage_adapter.client.generate_presigned_post(**kwargs))
-            except AttributeError:
-                # storage_adapter does not have a 'client' attribute
-                pass
-            except Exception as e:
-                # Fall back to manual construction if needed
-                self.service.logger.warning(f"Failed to generate presigned {operation}: {e}")
-
-        return None
+        result: BucketStats = _get_bucket_stats(self, bucket, detailed_stats)
+        return result
 
     def generate_presigned_url(
         self,
@@ -1226,28 +954,7 @@ class DeltaGliderClient:
         Returns:
             Presigned URL string
         """
-        # Try boto3 first, fallback to manual construction
-        url = self._try_boto3_presigned_operation(
-            "url",
-            ClientMethod=ClientMethod,
-            Params=Params,
-            ExpiresIn=ExpiresIn,
-        )
-        if url is not None:
-            return str(url)
-
-        # Fallback: construct URL manually (less secure, for dev/testing only)
-        bucket = Params.get("Bucket", "")
-        key = Params.get("Key", "")
-
-        if self.endpoint_url:
-            base_url = self.endpoint_url
-        else:
-            base_url = f"https://{bucket}.s3.amazonaws.com"
-
-        # Warning: This is not a real presigned URL, just a placeholder
-        self.service.logger.warning("Using placeholder presigned URL - not suitable for production")
-        return f"{base_url}/{key}?expires={ExpiresIn}"
+        return _generate_presigned_url(self, ClientMethod, Params, ExpiresIn)
 
     def generate_presigned_post(
         self,
@@ -1269,31 +976,7 @@ class DeltaGliderClient:
         Returns:
             Dict with 'url' and 'fields' for form submission
         """
-        # Try boto3 first, fallback to manual construction
-        response = self._try_boto3_presigned_operation(
-            "post",
-            Bucket=Bucket,
-            Key=Key,
-            Fields=Fields,
-            Conditions=Conditions,
-            ExpiresIn=ExpiresIn,
-        )
-        if response is not None:
-            return dict(response)
-
-        # Fallback: return minimal structure for compatibility
-        if self.endpoint_url:
-            url = f"{self.endpoint_url}/{Bucket}"
-        else:
-            url = f"https://{Bucket}.s3.amazonaws.com"
-
-        return {
-            "url": url,
-            "fields": {
-                "key": Key,
-                **(Fields or {}),
-            },
-        }
+        return _generate_presigned_post(self, Bucket, Key, Fields, Conditions, ExpiresIn)
 
     # ============================================================================
     # Bucket Management APIs (boto3-compatible)
@@ -1324,36 +1007,7 @@ class DeltaGliderClient:
             ...     CreateBucketConfiguration={'LocationConstraint': 'us-west-2'}
             ... )
         """
-        storage_adapter = self.service.storage
-
-        # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, "client"):
-            try:
-                params: dict[str, Any] = {"Bucket": Bucket}
-                if CreateBucketConfiguration:
-                    params["CreateBucketConfiguration"] = CreateBucketConfiguration
-
-                response = storage_adapter.client.create_bucket(**params)
-                return {
-                    "Location": response.get("Location", f"/{Bucket}"),
-                    "ResponseMetadata": {
-                        "HTTPStatusCode": 200,
-                    },
-                }
-            except Exception as e:
-                error_msg = str(e)
-                if "BucketAlreadyExists" in error_msg or "BucketAlreadyOwnedByYou" in error_msg:
-                    # Bucket already exists - return success
-                    self.service.logger.debug(f"Bucket {Bucket} already exists")
-                    return {
-                        "Location": f"/{Bucket}",
-                        "ResponseMetadata": {
-                            "HTTPStatusCode": 200,
-                        },
-                    }
-                raise RuntimeError(f"Failed to create bucket: {e}") from e
-        else:
-            raise NotImplementedError("Storage adapter does not support bucket creation")
+        return _create_bucket(self, Bucket, CreateBucketConfiguration, **kwargs)
 
     def delete_bucket(
         self,
@@ -1375,30 +1029,7 @@ class DeltaGliderClient:
             >>> client = create_client()
             >>> client.delete_bucket(Bucket='my-bucket')
         """
-        storage_adapter = self.service.storage
-
-        # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, "client"):
-            try:
-                storage_adapter.client.delete_bucket(Bucket=Bucket)
-                return {
-                    "ResponseMetadata": {
-                        "HTTPStatusCode": 204,
-                    },
-                }
-            except Exception as e:
-                error_msg = str(e)
-                if "NoSuchBucket" in error_msg:
-                    # Bucket doesn't exist - return success
-                    self.service.logger.debug(f"Bucket {Bucket} does not exist")
-                    return {
-                        "ResponseMetadata": {
-                            "HTTPStatusCode": 204,
-                        },
-                    }
-                raise RuntimeError(f"Failed to delete bucket: {e}") from e
-        else:
-            raise NotImplementedError("Storage adapter does not support bucket deletion")
+        return _delete_bucket(self, Bucket, **kwargs)
 
     def list_buckets(self, **kwargs: Any) -> dict[str, Any]:
         """List all S3 buckets (boto3-compatible).
@@ -1415,23 +1046,7 @@ class DeltaGliderClient:
             >>> for bucket in response['Buckets']:
             ...     print(bucket['Name'])
         """
-        storage_adapter = self.service.storage
-
-        # Check if storage adapter has boto3 client
-        if hasattr(storage_adapter, "client"):
-            try:
-                response = storage_adapter.client.list_buckets()
-                return {
-                    "Buckets": response.get("Buckets", []),
-                    "Owner": response.get("Owner", {}),
-                    "ResponseMetadata": {
-                        "HTTPStatusCode": 200,
-                    },
-                }
-            except Exception as e:
-                raise RuntimeError(f"Failed to list buckets: {e}") from e
-        else:
-            raise NotImplementedError("Storage adapter does not support bucket listing")
+        return _list_buckets(self, **kwargs)
 
     def _parse_tagging(self, tagging: str) -> dict[str, str]:
         """Parse URL-encoded tagging string to dict."""
@@ -1528,7 +1143,7 @@ def create_client(
     metrics = NoopMetricsAdapter()
 
     # Get default values
-    tool_version = kwargs.pop("tool_version", "deltaglider/0.2.0")
+    tool_version = kwargs.pop("tool_version", "deltaglider/5.0.0")
     max_ratio = kwargs.pop("max_ratio", 0.5)
 
     # Create service

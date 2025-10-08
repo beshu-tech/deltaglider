@@ -1,10 +1,65 @@
 """Type definitions for boto3-compatible responses.
 
-These TypedDict definitions provide type safety and IDE autocomplete
-without requiring boto3 imports. At runtime, all responses are plain dicts
-that are 100% compatible with boto3.
+These TypedDict definitions provide type hints for DeltaGlider's boto3-compatible
+responses. All methods return plain `dict[str, Any]` at runtime for maximum
+flexibility and boto3 compatibility.
 
-This allows DeltaGlider to be a true drop-in replacement for boto3.s3.Client.
+## Basic Usage (Recommended)
+
+Use DeltaGlider with simple dict access - no type imports needed:
+
+```python
+from deltaglider import create_client
+
+client = create_client()
+
+# Returns plain dict - 100% boto3 compatible
+response = client.put_object(Bucket='my-bucket', Key='file.zip', Body=data)
+print(response['ETag'])
+
+# List objects with dict access
+listing = client.list_objects(Bucket='my-bucket')
+for obj in listing['Contents']:
+    print(f"{obj['Key']}: {obj['Size']} bytes")
+```
+
+## Optional Type Hints
+
+For IDE autocomplete and type checking, you can use our convenience TypedDicts:
+
+```python
+from deltaglider import create_client
+from deltaglider.types import PutObjectResponse, ListObjectsV2Response
+
+client = create_client()
+response: PutObjectResponse = client.put_object(...)  # IDE autocomplete
+listing: ListObjectsV2Response = client.list_objects(...)
+```
+
+## Advanced: boto3-stubs Integration
+
+For strictest type checking (requires boto3-stubs installation):
+
+```bash
+pip install boto3-stubs[s3]
+```
+
+```python
+from mypy_boto3_s3.type_defs import PutObjectOutputTypeDef
+response: PutObjectOutputTypeDef = client.put_object(...)
+```
+
+**Note**: boto3-stubs TypedDefs are very strict and require ALL optional fields.
+DeltaGlider returns partial dicts for better boto3 compatibility, so boto3-stubs
+types may show false positive errors. Use `dict[str, Any]` or our TypedDicts instead.
+
+## Design Philosophy
+
+DeltaGlider returns `dict[str, Any]` from all boto3-compatible methods because:
+1. **Flexibility**: boto3 responses vary by service and operation
+2. **Compatibility**: Exact match with boto3 runtime behavior
+3. **Simplicity**: No complex type dependencies for users
+4. **Optional Typing**: Users choose their preferred level of type safety
 """
 
 from datetime import datetime
@@ -37,6 +92,24 @@ class CommonPrefix(TypedDict):
     """
 
     Prefix: str
+
+
+# ============================================================================
+# Response Metadata (used in all responses)
+# ============================================================================
+
+
+class ResponseMetadata(TypedDict):
+    """Metadata about the API response.
+
+    Compatible with all boto3 responses.
+    """
+
+    RequestId: NotRequired[str]
+    HostId: NotRequired[str]
+    HTTPStatusCode: int
+    HTTPHeaders: NotRequired[dict[str, str]]
+    RetryAttempts: NotRequired[int]
 
 
 # ============================================================================
@@ -78,24 +151,12 @@ class ListObjectsV2Response(TypedDict):
     NextContinuationToken: NotRequired[str]
     StartAfter: NotRequired[str]
     IsTruncated: NotRequired[bool]
+    ResponseMetadata: NotRequired[ResponseMetadata]
 
 
 # ============================================================================
 # Put/Get/Delete Response Types
 # ============================================================================
-
-
-class ResponseMetadata(TypedDict):
-    """Metadata about the API response.
-
-    Compatible with all boto3 responses.
-    """
-
-    RequestId: NotRequired[str]
-    HostId: NotRequired[str]
-    HTTPStatusCode: int
-    HTTPHeaders: NotRequired[dict[str, str]]
-    RetryAttempts: NotRequired[int]
 
 
 class PutObjectResponse(TypedDict):
