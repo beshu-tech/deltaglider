@@ -30,7 +30,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Runtime stage - minimal image
 FROM python:${PYTHON_VERSION}
 
-# Install xdelta3
+# Skip man pages and docs to speed up builds
+RUN mkdir -p /etc/dpkg/dpkg.cfg.d && \
+    echo 'path-exclude /usr/share/doc/*' > /etc/dpkg/dpkg.cfg.d/01_nodoc && \
+    echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc && \
+    echo 'path-exclude /usr/share/groff/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc && \
+    echo 'path-exclude /usr/share/info/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc && \
+    echo 'path-exclude /usr/share/lintian/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc && \
+    echo 'path-exclude /usr/share/linda/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
+
+# Install xdelta3 (now much faster without man pages)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends xdelta3 && \
     apt-get clean && \
