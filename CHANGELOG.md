@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- boto3-compatible TypedDict types for S3 responses (no boto3 import needed)
+- Complete boto3 compatibility vision document
+
+### Changed
+- **BREAKING**: `list_objects()` now returns boto3-compatible dict instead of custom dataclass
+  - Use `response['Contents']` instead of `response.contents`
+  - Use `response.get('IsTruncated')` instead of `response.is_truncated`
+  - Use `response.get('NextContinuationToken')` instead of `response.next_continuation_token`
+  - DeltaGlider metadata now in `Metadata` field of each object
+
+### Fixed
+- Updated all documentation examples to use dict-based responses
+- Fixed pagination examples in README and API docs
+- Corrected SDK documentation with accurate method signatures
+
 ## [4.2.4] - 2025-01-10
 
 ### Fixed

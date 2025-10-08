@@ -94,7 +94,7 @@ def list_objects(
     StartAfter: Optional[str] = None,
     FetchMetadata: bool = False,
     **kwargs
-) -> ListObjectsResponse
+) -> dict[str, Any]
 ```
 
 ##### Parameters
@@ -117,19 +117,32 @@ The method intelligently optimizes performance by:
 2. Only fetching metadata for delta files when explicitly requested
 3. Supporting efficient pagination for large buckets
 
+##### Returns
+
+boto3-compatible dict with:
+- **Contents** (`list[dict]`): List of S3Object dicts with Key, Size, LastModified, Metadata
+- **CommonPrefixes** (`list[dict]`): Optional list of common prefixes (folders)
+- **IsTruncated** (`bool`): Whether more results are available
+- **NextContinuationToken** (`str`): Token for next page
+- **KeyCount** (`int`): Number of keys returned
+
 ##### Examples
 
 ```python
 # Fast listing for UI display (no metadata fetching)
 response = client.list_objects(Bucket='releases')
+for obj in response['Contents']:
+    print(f"{obj['Key']}: {obj['Size']} bytes")
 
 # Paginated listing for large buckets
 response = client.list_objects(Bucket='releases', MaxKeys=100)
-while response.is_truncated:
+while response.get('IsTruncated'):
+    for obj in response['Contents']:
+        print(obj['Key'])
     response = client.list_objects(
         Bucket='releases',
         MaxKeys=100,
-        ContinuationToken=response.next_continuation_token
+        ContinuationToken=response.get('NextContinuationToken')
     )
 
 # Get detailed compression stats (slower, only for analytics)
@@ -137,6 +150,11 @@ response = client.list_objects(
     Bucket='releases',
     FetchMetadata=True  # Only fetches for delta files
 )
+for obj in response['Contents']:
+    metadata = obj.get('Metadata', {})
+    if metadata.get('deltaglider-is-delta') == 'true':
+        compression = metadata.get('deltaglider-compression-ratio', 'unknown')
+        print(f"{obj['Key']}: {compression} compression")
 ```
 
 #### `get_bucket_stats`

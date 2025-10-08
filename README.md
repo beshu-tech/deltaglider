@@ -207,14 +207,18 @@ with open('downloaded.zip', 'wb') as f:
 
 # Smart list_objects with optimized performance
 response = client.list_objects(Bucket='releases', Prefix='v2.0.0/')
+for obj in response['Contents']:
+    print(f"{obj['Key']}: {obj['Size']} bytes")
 
 # Paginated listing for large buckets
 response = client.list_objects(Bucket='releases', MaxKeys=100)
-while response.is_truncated:
+while response.get('IsTruncated'):
+    for obj in response['Contents']:
+        print(obj['Key'])
     response = client.list_objects(
         Bucket='releases',
         MaxKeys=100,
-        ContinuationToken=response.next_continuation_token
+        ContinuationToken=response.get('NextContinuationToken')
     )
 
 # Delete and inspect objects
