@@ -263,7 +263,10 @@ def ls(
 
             client = DeltaGliderClient(service)
             dg_response = client.list_objects(
-                Bucket=bucket_name, Prefix=prefix_str, MaxKeys=10000, Delimiter="/" if not recursive else ""
+                Bucket=bucket_name,
+                Prefix=prefix_str,
+                MaxKeys=10000,
+                Delimiter="/" if not recursive else "",
             )
             objects = dg_response["Contents"]
 
@@ -275,7 +278,7 @@ def ls(
                     # Show only the directory name, not the full path
                     if prefix_str:
                         # Strip the current prefix to show only the subdirectory
-                        display_name = prefix_path[len(prefix_str):]
+                        display_name = prefix_path[len(prefix_str) :]
                     else:
                         display_name = prefix_path
                     click.echo(f"                           PRE {display_name}")
@@ -284,7 +287,7 @@ def ls(
                 filtered_objects = []
                 for obj in objects:
                     obj_key = obj["Key"]
-                    rel_path = obj_key[len(prefix_str):] if prefix_str else obj_key
+                    rel_path = obj_key[len(prefix_str) :] if prefix_str else obj_key
                     # Only include if it's a direct child (no / in relative path)
                     if "/" not in rel_path and rel_path:
                         filtered_objects.append(obj)
@@ -310,7 +313,7 @@ def ls(
 
                 # Show only the filename relative to current prefix (like AWS CLI)
                 if prefix_str:
-                    display_key = obj["Key"][len(prefix_str):]
+                    display_key = obj["Key"][len(prefix_str) :]
                 else:
                     display_key = obj["Key"]
 

@@ -309,7 +309,9 @@ class DeltaGliderClient:
                         reference_key = metadata.get("ref_key")
 
                         deltaglider_metadata["deltaglider-original-size"] = str(original_size)
-                        deltaglider_metadata["deltaglider-compression-ratio"] = str(compression_ratio)
+                        deltaglider_metadata["deltaglider-compression-ratio"] = str(
+                            compression_ratio
+                        )
                         if reference_key:
                             deltaglider_metadata["deltaglider-reference-key"] = reference_key
                 except Exception as e:
@@ -1129,9 +1131,7 @@ class DeltaGliderClient:
                 compression_ratio_str = metadata.get("deltaglider-compression-ratio", "0.0")
                 try:
                     compression_ratio = (
-                        float(compression_ratio_str)
-                        if compression_ratio_str != "unknown"
-                        else 0.0
+                        float(compression_ratio_str) if compression_ratio_str != "unknown" else 0.0
                     )
                 except ValueError:
                     compression_ratio = 0.0
@@ -1143,7 +1143,9 @@ class DeltaGliderClient:
                         last_modified=obj_dict.get("LastModified", ""),
                         etag=obj_dict.get("ETag"),
                         storage_class=obj_dict.get("StorageClass", "STANDARD"),
-                        original_size=int(metadata.get("deltaglider-original-size", obj_dict["Size"])),
+                        original_size=int(
+                            metadata.get("deltaglider-original-size", obj_dict["Size"])
+                        ),
                         compressed_size=obj_dict["Size"],
                         is_delta=metadata.get("deltaglider-is-delta", "false") == "true",
                         compression_ratio=compression_ratio,

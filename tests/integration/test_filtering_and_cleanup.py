@@ -68,9 +68,7 @@ class TestSDKFiltering:
 
         # Verify is_delta flag is set correctly in Metadata
         delta_objects = [
-            obj
-            for obj in contents
-            if obj.get("Metadata", {}).get("deltaglider-is-delta") == "true"
+            obj for obj in contents if obj.get("Metadata", {}).get("deltaglider-is-delta") == "true"
         ]
         assert len(delta_objects) == 2
 
