@@ -141,6 +141,11 @@ def get_bucket_stats(
     direct_count = 0
 
     for obj in all_objects:
+        # Skip reference.bin files - they are internal implementation details
+        # and their size is already accounted for in delta metadata
+        if obj.key.endswith("/reference.bin") or obj.key == "reference.bin":
+            continue
+
         compressed_size += obj.size
 
         if obj.is_delta:
