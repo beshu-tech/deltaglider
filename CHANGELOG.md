@@ -7,9 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.1] - 2025-01-10
+
+### Changed
+- **Code Organization**: Refactored client.py from 1560 to 1154 lines (26% reduction)
+- Extracted client operations into modular `client_operations/` package:
+  - `bucket.py` - S3 bucket management operations
+  - `presigned.py` - Presigned URL generation
+  - `batch.py` - Batch upload/download operations
+  - `stats.py` - Analytics and statistics operations
+- Improved code maintainability with logical separation of concerns
+- Better developer experience with cleaner module structure
+
+### Internal
+- Full type safety maintained with mypy (0 errors)
+- All 99 tests passing
+- Code quality checks passing (ruff)
+- No breaking changes - all public APIs remain unchanged
+
+## [5.0.0] - 2025-01-10
+
 ### Added
 - boto3-compatible TypedDict types for S3 responses (no boto3 import needed)
 - Complete boto3 compatibility vision document
+- Type-safe response builders using TypedDict patterns
 
 ### Changed
 - **BREAKING**: `list_objects()` now returns boto3-compatible dict instead of custom dataclass
@@ -17,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Use `response.get('IsTruncated')` instead of `response.is_truncated`
   - Use `response.get('NextContinuationToken')` instead of `response.next_continuation_token`
   - DeltaGlider metadata now in `Metadata` field of each object
+- Internal response building now uses TypedDict for compile-time type safety
+- All S3 responses are dicts at runtime (TypedDict is a dict!)
 
 ### Fixed
 - Updated all documentation examples to use dict-based responses
@@ -83,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delta compression for versioned artifacts
 - 99%+ compression for similar files
 
+[5.0.1]: https://github.com/beshu-tech/deltaglider/compare/v5.0.0...v5.0.1
+[5.0.0]: https://github.com/beshu-tech/deltaglider/compare/v4.2.4...v5.0.0
 [4.2.4]: https://github.com/beshu-tech/deltaglider/compare/v4.2.3...v4.2.4
 [4.2.3]: https://github.com/beshu-tech/deltaglider/compare/v4.2.2...v4.2.3
 [4.2.2]: https://github.com/beshu-tech/deltaglider/compare/v4.2.1...v4.2.2
