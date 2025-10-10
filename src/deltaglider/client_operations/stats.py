@@ -123,7 +123,9 @@ def get_bucket_stats(
     # Phase 2: Fetch metadata for delta files in parallel (10x faster)
     metadata_map = {}
     if delta_keys:
-        client.service.logger.info(f"Fetching metadata for {len(delta_keys)} delta files in parallel...")
+        client.service.logger.info(
+            f"Fetching metadata for {len(delta_keys)} delta files in parallel..."
+        )
 
         def fetch_metadata(key: str) -> tuple[str, dict[str, Any] | None]:
             try:
@@ -134,7 +136,9 @@ def get_bucket_stats(
                 client.service.logger.debug(f"Failed to fetch metadata for {key}: {e}")
             return key, None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(delta_keys))) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(10, len(delta_keys))
+        ) as executor:
             futures = [executor.submit(fetch_metadata, key) for key in delta_keys]
             for future in concurrent.futures.as_completed(futures):
                 key, metadata = future.result()
@@ -231,14 +235,16 @@ def get_bucket_stats(
     if delta_count > 0 and total_reference_size > 0:
         # Add all reference.bin files to compressed size
         total_compressed_size += total_reference_size
-        client.service.logger.info(f"Including {len(reference_files)} reference.bin file(s) ({total_reference_size:,} bytes) in compressed size")
+        client.service.logger.info(
+            f"Including {len(reference_files)} reference.bin file(s) ({total_reference_size:,} bytes) in compressed size"
+        )
     elif delta_count == 0 and total_reference_size > 0:
         # ORPHANED REFERENCE WARNING
         waste_mb = total_reference_size / 1024 / 1024
         client.service.logger.warning(
-            f"\n{'='*60}\n"
+            f"\n{'=' * 60}\n"
             f"WARNING: ORPHANED REFERENCE FILE(S) DETECTED!\n"
-            f"{'='*60}\n"
+            f"{'=' * 60}\n"
             f"Found {len(reference_files)} reference.bin file(s) totaling {total_reference_size:,} bytes ({waste_mb:.2f} MB)\n"
             f"but NO delta files are using them.\n"
             f"\n"
@@ -250,14 +256,12 @@ def get_bucket_stats(
             path = f"{deltaspace}/reference.bin" if deltaspace else "reference.bin"
             client.service.logger.warning(f"  - s3://{bucket}/{path} ({size:,} bytes)")
 
-        client.service.logger.warning(
-            f"\nConsider removing these orphaned files:\n"
-        )
+        client.service.logger.warning(f"\nConsider removing these orphaned files:\n")
         for deltaspace in reference_files:
             path = f"{deltaspace}/reference.bin" if deltaspace else "reference.bin"
             client.service.logger.warning(f"  aws s3 rm s3://{bucket}/{path}")
 
-        client.service.logger.warning(f"{'='*60}")
+        client.service.logger.warning(f"{'=' * 60}")
 
     space_saved = total_original_size - total_compressed_size
     avg_ratio = (space_saved / total_original_size) if total_original_size > 0 else 0.0
