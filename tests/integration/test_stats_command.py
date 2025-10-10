@@ -49,7 +49,9 @@ class TestStatsCommand:
             assert output["direct_objects"] == 3
 
             # Verify client was called correctly
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", detailed_stats=False)
+            mock_client.get_bucket_stats.assert_called_once_with(
+                "test-bucket", detailed_stats=False
+            )
 
     def test_stats_json_output_detailed(self):
         """Test stats command with detailed JSON output."""
@@ -153,7 +155,9 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify bucket name was parsed correctly from S3 URL
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", detailed_stats=False)
+            mock_client.get_bucket_stats.assert_called_once_with(
+                "test-bucket", detailed_stats=False
+            )
 
     def test_stats_with_s3_url_trailing_slash(self):
         """Test stats command with s3:// URL format with trailing slash."""
@@ -178,7 +182,9 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify bucket name was parsed correctly from S3 URL with trailing slash
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", detailed_stats=False)
+            mock_client.get_bucket_stats.assert_called_once_with(
+                "test-bucket", detailed_stats=False
+            )
 
     def test_stats_with_s3_url_with_prefix(self):
         """Test stats command with s3:// URL format with prefix (should ignore prefix)."""
@@ -203,4 +209,6 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify only bucket name was extracted, prefix ignored
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", detailed_stats=False)
+            mock_client.get_bucket_stats.assert_called_once_with(
+                "test-bucket", detailed_stats=False
+            )
