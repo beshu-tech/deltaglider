@@ -20,6 +20,7 @@ from ...adapters import (
 )
 from ...core import DeltaService, ObjectKey
 from ...ports import MetricsPort
+from ...ports.cache import CachePort
 from .aws_compat import (
     copy_s3_to_s3,
     determine_operation,
@@ -61,9 +62,26 @@ def create_service(
     storage = S3StorageAdapter(endpoint_url=endpoint_url)
     diff = XdeltaAdapter()
 
-    # SECURITY: Use Content-Addressed Storage for zero-collision guarantee
-    from deltaglider.adapters import ContentAddressedCache
-    cache = ContentAddressedCache(cache_dir, hasher)
+    # SECURITY: Configurable cache with encryption and backend selection
+    from deltaglider.adapters import ContentAddressedCache, EncryptedCache, MemoryCache
+
+    # Select backend: memory or filesystem
+    cache_backend = os.environ.get("DG_CACHE_BACKEND", "filesystem")  # Options: filesystem, memory
+    base_cache: CachePort
+    if cache_backend == "memory":
+        max_size_mb = int(os.environ.get("DG_CACHE_MEMORY_SIZE_MB", "100"))
+        base_cache = MemoryCache(hasher, max_size_mb=max_size_mb, temp_dir=cache_dir)
+    else:
+        # Filesystem-backed with Content-Addressed Storage
+        base_cache = ContentAddressedCache(cache_dir, hasher)
+
+    # Apply encryption if enabled
+    enable_encryption = os.environ.get("DG_CACHE_ENCRYPTION", "true").lower() == "true"
+    cache: CachePort
+    if enable_encryption:
+        cache = EncryptedCache.from_env(base_cache)
+    else:
+        cache = base_cache
 
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)

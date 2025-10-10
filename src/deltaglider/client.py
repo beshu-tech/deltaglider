@@ -2,6 +2,7 @@
 
 # ruff: noqa: I001
 import atexit
+import os
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -1115,6 +1116,8 @@ def create_client(
     # Import here to avoid circular dependency
     from .adapters import (
         ContentAddressedCache,
+        EncryptedCache,
+        MemoryCache,
         NoopMetricsAdapter,
         S3StorageAdapter,
         Sha256Adapter,
@@ -1144,8 +1147,25 @@ def create_client(
     storage = S3StorageAdapter(endpoint_url=endpoint_url, boto3_kwargs=boto3_kwargs)
     diff = XdeltaAdapter()
 
-    # SECURITY: Use Content-Addressed Storage for zero-collision guarantee
-    cache = ContentAddressedCache(cache_dir, hasher)
+    # SECURITY: Configurable cache with encryption and backend selection
+    from .ports.cache import CachePort
+
+    cache_backend = os.environ.get("DG_CACHE_BACKEND", "filesystem")  # Options: filesystem, memory
+    base_cache: CachePort
+    if cache_backend == "memory":
+        max_size_mb = int(os.environ.get("DG_CACHE_MEMORY_SIZE_MB", "100"))
+        base_cache = MemoryCache(hasher, max_size_mb=max_size_mb, temp_dir=cache_dir)
+    else:
+        # Filesystem-backed with Content-Addressed Storage
+        base_cache = ContentAddressedCache(cache_dir, hasher)
+
+    # Apply encryption if enabled (default: true)
+    enable_encryption = os.environ.get("DG_CACHE_ENCRYPTION", "true").lower() == "true"
+    cache: CachePort
+    if enable_encryption:
+        cache = EncryptedCache.from_env(base_cache)
+    else:
+        cache = base_cache
 
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)

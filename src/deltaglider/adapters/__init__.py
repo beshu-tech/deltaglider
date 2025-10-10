@@ -1,7 +1,9 @@
 """Adapters for DeltaGlider."""
 
 from .cache_cas import ContentAddressedCache
+from .cache_encrypted import EncryptedCache
 from .cache_fs import FsCacheAdapter
+from .cache_memory import MemoryCache
 from .clock_utc import UtcClockAdapter
 from .diff_xdelta import XdeltaAdapter
 from .hash_sha import Sha256Adapter
@@ -15,6 +17,8 @@ __all__ = [
     "Sha256Adapter",
     "FsCacheAdapter",
     "ContentAddressedCache",
+    "EncryptedCache",
+    "MemoryCache",
     "UtcClockAdapter",
     "StdLoggerAdapter",
     "NoopMetricsAdapter",

@@ -97,13 +97,15 @@ src/deltaglider/
 │   ├── logger.py   # LoggerPort protocol for logging
 │   └── metrics.py  # MetricsPort protocol for observability
 ├── adapters/       # Concrete implementations
-│   ├── storage_s3.py    # S3StorageAdapter using boto3
-│   ├── diff_xdelta.py   # XdeltaAdapter using xdelta3 binary
-│   ├── hash_sha256.py   # Sha256Adapter for checksums
-│   ├── cache_fs.py      # FsCacheAdapter for file system cache
-│   ├── clock_utc.py     # UtcClockAdapter for UTC timestamps
-│   ├── logger_std.py    # StdLoggerAdapter for console output
-│   └── metrics_noop.py  # NoopMetricsAdapter (placeholder)
+│   ├── storage_s3.py      # S3StorageAdapter using boto3
+│   ├── diff_xdelta.py     # XdeltaAdapter using xdelta3 binary
+│   ├── hash_sha256.py     # Sha256Adapter for checksums
+│   ├── cache_cas.py       # ContentAddressedCache (SHA256-based storage)
+│   ├── cache_encrypted.py # EncryptedCache (Fernet encryption wrapper)
+│   ├── cache_memory.py    # MemoryCache (LRU in-memory cache)
+│   ├── clock_utc.py       # UtcClockAdapter for UTC timestamps
+│   ├── logger_std.py      # StdLoggerAdapter for console output
+│   └── metrics_noop.py    # NoopMetricsAdapter (placeholder)
 └── app/
     └── cli/        # Click-based CLI application
         ├── main.py          # Main CLI entry point with AWS S3 commands
@@ -144,6 +146,9 @@ src/deltaglider/
    - Cache uses SHA256 as filename with two-level directory structure (ab/cd/abcdef...)
    - Automatic deduplication: same content = same SHA = same cache file
    - Zero collision risk: SHA256 namespace guarantees uniqueness
+   - **Encryption**: Optional Fernet (AES-128-CBC + HMAC) encryption at rest (enabled by default)
+   - Ephemeral encryption keys per process for forward secrecy
+   - **Cache Backends**: Configurable filesystem or in-memory cache with LRU eviction
 
 3. **Sync Algorithm** (`app/cli/sync.py`):
    - Compares local vs S3 using size and modification time
@@ -185,12 +190,16 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 
 - `DG_LOG_LEVEL`: Logging level (default: "INFO")
 - `DG_MAX_RATIO`: Maximum acceptable delta/file ratio (default: "0.5")
+- `DG_CACHE_BACKEND`: Cache backend type - "filesystem" (default) or "memory"
+- `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size limit in MB (default: "100")
+- `DG_CACHE_ENCRYPTION`: Enable cache encryption - "true" (default) or "false"
+- `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded Fernet key for persistent encryption (ephemeral by default)
 - `AWS_ENDPOINT_URL`: Override S3 endpoint for MinIO/LocalStack
 - `AWS_ACCESS_KEY_ID`: AWS credentials
 - `AWS_SECRET_ACCESS_KEY`: AWS credentials
 - `AWS_DEFAULT_REGION`: AWS region
 
-**Note**: DeltaGlider uses ephemeral, process-isolated cache for security. Cache is automatically created in `/tmp/deltaglider-*` and cleaned up on exit.
+**Note**: DeltaGlider uses ephemeral, process-isolated cache for security. Cache is automatically created in `/tmp/deltaglider-*` and cleaned up on exit. Encryption is enabled by default with ephemeral keys for forward secrecy.
 
 ## Important Implementation Details
 
@@ -206,7 +215,11 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 
 ## Performance Considerations
 
-- Local reference caching dramatically improves performance for repeated operations
+- **Content-Addressed Storage**: SHA256-based deduplication eliminates redundant storage
+- **Cache Backends**:
+  - Filesystem cache (default): persistent across processes, good for shared workflows
+  - Memory cache: faster, zero I/O, perfect for ephemeral CI/CD pipelines
+- **Encryption Overhead**: ~10-15% performance impact, provides security at rest
 - Delta compression is CPU-intensive; consider parallelization for bulk uploads
 - The default max_ratio of 0.5 prevents storing inefficient deltas
 - For files <1MB, delta overhead may exceed benefits
@@ -217,3 +230,7 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 - Use IAM roles when possible
 - All S3 operations respect bucket policies and encryption settings
 - SHA256 checksums prevent tampering and corruption
+- **Encryption at Rest**: Cache data encrypted by default using Fernet (AES-128-CBC + HMAC)
+- **Ephemeral Keys**: Encryption keys auto-generated per process for forward secrecy
+- **Persistent Keys**: Set `DG_CACHE_ENCRYPTION_KEY` for cross-process cache sharing (use secrets management)
+- **Content-Addressed Storage**: SHA256-based filenames prevent collision attacks
