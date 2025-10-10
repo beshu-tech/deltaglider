@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from deltaglider.adapters import (
-    FsCacheAdapter,
+    ContentAddressedCache,
     NoopMetricsAdapter,
     Sha256Adapter,
     StdLoggerAdapter,
@@ -59,9 +59,9 @@ def real_hasher():
 
 @pytest.fixture
 def cache_adapter(temp_dir, real_hasher):
-    """Create filesystem cache adapter."""
+    """Create content-addressed storage cache adapter."""
     cache_dir = temp_dir / "cache"
-    return FsCacheAdapter(cache_dir, real_hasher)
+    return ContentAddressedCache(cache_dir, real_hasher)
 
 
 @pytest.fixture

@@ -86,10 +86,10 @@ ref_path = self.cache.get_validated_ref(
 
 ---
 
-### **DAY 3-5: Quick Wins** (v5.1.0)
+### **DAY 3-5: Quick Wins** (v5.0.3) ✅ COMPLETED
 *Low-risk improvements with high security impact*
 
-#### 4. **Implement Content-Addressed Storage** (4 hours)
+#### 4. **Implement Content-Addressed Storage** (4 hours) ✅ COMPLETED
 ```python
 # src/deltaglider/adapters/cache_cas.py
 class ContentAddressedCache(CachePort):
@@ -122,11 +122,17 @@ class ContentAddressedCache(CachePort):
         return path
 ```
 
-**Benefits**:
-- Same file cached once regardless of bucket/prefix
-- Automatic deduplication
-- No collision possible (SHA256 uniqueness)
+**Benefits**: ✅ ACHIEVED
+- Same file cached once regardless of bucket/prefix (automatic deduplication)
+- No collision possible (SHA256 uniqueness guarantees)
 - Natural cache validation (filename IS the checksum)
+- Two-level directory structure (ab/cd/abcdef...) for filesystem optimization
+
+**Implementation**: Complete in `src/deltaglider/adapters/cache_cas.py` with:
+- `_cas_path()` method for SHA256-based path computation
+- `get_validated_ref()` with atomic validation and locking
+- `write_ref()` with atomic temp-file + rename pattern
+- Ephemeral deltaspace-to-SHA mapping for compatibility
 
 #### 5. **Add Secure Directory Creation** (2 hours)
 ```python

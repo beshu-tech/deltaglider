@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - **BREAKING**: Removed all legacy shared cache code for security
 - Ephemeral process-isolated cache is now the ONLY mode (no opt-out)
+- **Content-Addressed Storage (CAS)**: Implemented SHA256-based cache storage
+  - Zero collision risk (SHA256 namespace guarantees uniqueness)
+  - Automatic deduplication (same content = same filename)
+  - Tampering protection (changing content changes SHA, breaks lookup)
+  - Two-level directory structure for filesystem optimization
 - Fixed TOCTOU vulnerabilities with atomic SHA validation at use-time
 - Added `get_validated_ref()` method to prevent cache poisoning
 - Eliminated multi-user data exposure through mandatory cache isolation
@@ -26,10 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All cache operations use file locking (Unix) and SHA validation
 - Added `CacheMissError` and `CacheCorruptionError` exceptions
 
+### Added
+- New `ContentAddressedCache` adapter in `adapters/cache_cas.py`
+- Self-describing cache structure with SHA256-based filenames
+
 ### Internal
-- Updated all tests to use ephemeral cache
-- All 99 tests passing
-- Completed Phase 1 of SECURITY_FIX_ROADMAP.md
+- Updated all tests to use Content-Addressed Storage
+- All 99 tests passing with zero errors
+- Type checking: 0 errors (mypy)
+- Linting: All checks passed (ruff)
+- Completed Phase 1 & Phase 2 of SECURITY_FIX_ROADMAP.md
 
 ## [5.0.1] - 2025-01-10
 

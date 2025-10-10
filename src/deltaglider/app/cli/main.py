@@ -11,7 +11,6 @@ from pathlib import Path
 import click
 
 from ...adapters import (
-    FsCacheAdapter,
     NoopMetricsAdapter,
     S3StorageAdapter,
     Sha256Adapter,
@@ -61,7 +60,11 @@ def create_service(
     hasher = Sha256Adapter()
     storage = S3StorageAdapter(endpoint_url=endpoint_url)
     diff = XdeltaAdapter()
-    cache = FsCacheAdapter(cache_dir, hasher)
+
+    # SECURITY: Use Content-Addressed Storage for zero-collision guarantee
+    from deltaglider.adapters import ContentAddressedCache
+    cache = ContentAddressedCache(cache_dir, hasher)
+
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)
 

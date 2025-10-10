@@ -140,7 +140,10 @@ src/deltaglider/
 2. **Reference Management** (`core/service.py`):
    - Reference stored at `{deltaspace.prefix}/reference.bin`
    - SHA256 verification on every read/write
-   - Local cache in `/tmp/.deltaglider/reference_cache` for performance
+   - **Content-Addressed Storage (CAS)** cache in `/tmp/deltaglider-*` (ephemeral)
+   - Cache uses SHA256 as filename with two-level directory structure (ab/cd/abcdef...)
+   - Automatic deduplication: same content = same SHA = same cache file
+   - Zero collision risk: SHA256 namespace guarantees uniqueness
 
 3. **Sync Algorithm** (`app/cli/sync.py`):
    - Compares local vs S3 using size and modification time

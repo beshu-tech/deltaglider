@@ -1114,7 +1114,7 @@ def create_client(
     """
     # Import here to avoid circular dependency
     from .adapters import (
-        FsCacheAdapter,
+        ContentAddressedCache,
         NoopMetricsAdapter,
         S3StorageAdapter,
         Sha256Adapter,
@@ -1143,7 +1143,10 @@ def create_client(
     hasher = Sha256Adapter()
     storage = S3StorageAdapter(endpoint_url=endpoint_url, boto3_kwargs=boto3_kwargs)
     diff = XdeltaAdapter()
-    cache = FsCacheAdapter(cache_dir, hasher)
+
+    # SECURITY: Use Content-Addressed Storage for zero-collision guarantee
+    cache = ContentAddressedCache(cache_dir, hasher)
+
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)
     metrics = NoopMetricsAdapter()
