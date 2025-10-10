@@ -189,7 +189,11 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 ## Environment Variables
 
 - `DG_LOG_LEVEL`: Logging level (default: "INFO")
-- `DG_MAX_RATIO`: Maximum acceptable delta/file ratio (default: "0.5")
+- `DG_MAX_RATIO`: Maximum acceptable delta/file ratio (default: "0.5", range: "0.0-1.0")
+  - **See [docs/DG_MAX_RATIO.md](docs/DG_MAX_RATIO.md) for complete tuning guide**
+  - Controls when to use delta vs. direct storage
+  - Lower (0.2-0.3) = conservative, only high-quality compression
+  - Higher (0.6-0.7) = permissive, accept modest savings
 - `DG_CACHE_BACKEND`: Cache backend type - "filesystem" (default) or "memory"
 - `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size limit in MB (default: "100")
 - `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded Fernet key for persistent encryption (ephemeral by default)

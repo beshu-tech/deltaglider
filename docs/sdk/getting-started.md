@@ -76,6 +76,10 @@ DeltaGlider supports the following environment variables:
 **Logging & Performance**:
 - `DG_LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
 - `DG_MAX_RATIO`: Maximum delta/file ratio (default: `0.5`, range: `0.0-1.0`)
+  - **See [DG_MAX_RATIO.md](../DG_MAX_RATIO.md) for complete tuning guide**
+  - Controls when to use delta compression vs. direct storage
+  - Lower (0.2-0.3) = conservative, only high-quality compression
+  - Higher (0.6-0.7) = permissive, accept modest savings
 
 **Cache Configuration**:
 - `DG_CACHE_BACKEND`: Cache backend type (default: `filesystem`, options: `filesystem`, `memory`)

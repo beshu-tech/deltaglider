@@ -85,7 +85,7 @@ docker run -v /shared-cache:/tmp/.deltaglider \
 
 **Environment Variables**:
 - `DG_LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
-- `DG_MAX_RATIO`: Maximum delta/file ratio (default: `0.5`, range: `0.0-1.0`)
+- `DG_MAX_RATIO`: Maximum delta/file ratio (default: `0.5`, range: `0.0-1.0`) - [📖 Complete Guide](docs/DG_MAX_RATIO.md)
 - `DG_CACHE_BACKEND`: Cache backend (default: `filesystem`, options: `filesystem`, `memory`)
 - `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size in MB (default: `100`)
 - `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded encryption key for cross-process cache sharing
@@ -93,6 +93,8 @@ docker run -v /shared-cache:/tmp/.deltaglider \
 - `AWS_ACCESS_KEY_ID`: AWS access key
 - `AWS_SECRET_ACCESS_KEY`: AWS secret key
 - `AWS_DEFAULT_REGION`: AWS region (default: `us-east-1`)
+
+> **💡 Tip**: `DG_MAX_RATIO` is a powerful tuning parameter. See the [DG_MAX_RATIO guide](docs/DG_MAX_RATIO.md) to learn how to optimize compression for your use case.
 
 **Security Notes**:
 - Encryption is **always enabled** (cannot be disabled)

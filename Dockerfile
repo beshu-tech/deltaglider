@@ -71,6 +71,11 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 ENV DG_LOG_LEVEL=INFO
 
 # Performance & Compression
+# DG_MAX_RATIO: Maximum delta/file ratio (0.0-1.0)
+# Default 0.5 means: only use delta if delta_size ≤ 50% of original_size
+# Lower (0.2-0.3) = more conservative, only high-quality compression
+# Higher (0.6-0.7) = more permissive, accept modest savings
+# See docs/DG_MAX_RATIO.md for complete tuning guide
 ENV DG_MAX_RATIO=0.5
 
 # Cache Configuration
