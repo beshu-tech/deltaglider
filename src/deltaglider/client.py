@@ -1061,6 +1061,86 @@ class DeltaGliderClient:
                     tags[key] = value
         return tags
 
+    # ============================================================================
+    # Cache Management APIs (DeltaGlider Extensions)
+    # ============================================================================
+
+    def clear_cache(self) -> None:
+        """Clear all cached reference files.
+
+        Forcibly removes all cached data from memory or disk. This is essential for
+        long-running applications that need to:
+        - Free memory/disk space
+        - Invalidate cache after configuration changes
+        - Ensure fresh data fetch from S3
+        - Clean up after tests
+
+        **Important for Long-Running Applications**:
+        Unlike the CLI which cleans up cache on exit, programmatic SDK usage
+        requires manual cache management. Call this method periodically or when:
+        - Application runs for extended periods (hours/days)
+        - Memory usage is high
+        - Configuration changes (endpoint, credentials, encryption key)
+        - Testing scenarios requiring clean state
+
+        **Effects**:
+        - Filesystem cache: Removes all files from cache directory
+        - Memory cache: Clears all in-memory data
+        - Encrypted cache: Clears encryption key mappings
+        - Next upload will re-fetch reference from S3
+
+        **Example - Long-Running Service**:
+        ```python
+        from deltaglider import create_client
+        import schedule
+        import time
+
+        client = create_client()
+
+        def upload_task():
+            client.put_object(Bucket='releases', Key='app.zip', Body=open('app.zip', 'rb'))
+
+        def cleanup_task():
+            client.clear_cache()  # Free resources every hour
+            print("Cache cleared")
+
+        # Upload every 10 minutes
+        schedule.every(10).minutes.do(upload_task)
+
+        # Clear cache every hour
+        schedule.every().hour.do(cleanup_task)
+
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+        ```
+
+        **Example - Test Cleanup**:
+        ```python
+        def test_upload():
+            client = create_client()
+            try:
+                client.put_object(Bucket='test', Key='file.zip', Body=b'data')
+            finally:
+                client.clear_cache()  # Ensure clean state for next test
+        ```
+
+        **Example - After Configuration Change**:
+        ```python
+        client = create_client(endpoint_url='http://minio1:9000')
+        client.put_object(Bucket='bucket', Key='file.zip', Body=b'data')
+
+        # Switch to different endpoint
+        client.clear_cache()  # Clear cache from old endpoint
+        client = create_client(endpoint_url='http://minio2:9000')
+        ```
+
+        See Also:
+        - `evict_cache()`: Remove specific cached reference
+        - docs/CACHE_MANAGEMENT.md: Complete cache management guide
+        """
+        self.service.cache.clear()
+
 
 def create_client(
     endpoint_url: str | None = None,

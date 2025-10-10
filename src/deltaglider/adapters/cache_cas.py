@@ -242,5 +242,29 @@ class ContentAddressedCache(CachePort):
 
         # NOTE: We don't delete the actual CAS file because:
         # - Other deltaspaces may reference the same SHA
+
+    def clear(self) -> None:
+        """Clear all cached references.
+
+        Removes all cached files and mappings. This is a destructive operation
+        that forcibly removes the entire cache directory.
+
+        Use cases:
+        - Long-running applications that need to free disk space
+        - Manual cache invalidation
+        - Test cleanup
+        - Ensuring fresh data fetch after configuration changes
+        """
+        import shutil
+
+        # Clear in-memory mapping
+        self._deltaspace_to_sha.clear()
+
+        # Remove all cache files (destructive!)
+        if self.base_dir.exists():
+            shutil.rmtree(self.base_dir, ignore_errors=True)
+
+        # Recreate base directory with secure permissions
+        self.base_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
         # - The ephemeral cache will be cleaned on process exit anyway
         # - For persistent cache (future), we'd need reference counting

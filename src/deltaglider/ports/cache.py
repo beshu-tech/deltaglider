@@ -42,3 +42,18 @@ class CachePort(Protocol):
     def evict(self, bucket: str, prefix: str) -> None:
         """Remove cached reference."""
         ...
+
+    def clear(self) -> None:
+        """Clear all cached references.
+
+        This method forcibly removes all cached data, useful for:
+        - Long-running applications that need to free memory
+        - Test cleanup
+        - Manual cache invalidation
+        - Ensuring fresh data fetch
+
+        Note: For filesystem caches, this removes all files in the cache directory.
+              For memory caches, this clears all in-memory data.
+              For encrypted caches, this also clears encryption key mappings.
+        """
+        ...

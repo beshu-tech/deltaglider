@@ -281,3 +281,25 @@ class EncryptedCache(CachePort):
 
         # Evict from backend
         self.backend.evict(bucket, prefix)
+
+    def clear(self) -> None:
+        """Clear all cached references and encryption mappings.
+
+        Removes all cached data and clears encryption key mappings.
+        This is the proper way to forcibly clean up cache in long-running
+        applications.
+
+        Use cases:
+        - Long-running applications needing to free resources
+        - Manual cache invalidation after key rotation
+        - Test cleanup
+        - Memory pressure situations
+
+        Note: After clearing, the cache will use a fresh encryption key
+              (ephemeral mode) or the same persistent key (if DG_CACHE_ENCRYPTION_KEY set).
+        """
+        # Clear encryption mapping
+        self._plaintext_sha_map.clear()
+
+        # Delegate to backend to clear actual files/memory
+        self.backend.clear()
