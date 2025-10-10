@@ -164,9 +164,17 @@ class EncryptedCache(CachePort):
             decrypted_data = self._cipher.decrypt(encrypted_data)
         except Exception as e:
             # Fernet raises InvalidToken for tampering/wrong key
+            # SECURITY: Auto-delete corrupted cache files
+            try:
+                encrypted_path.unlink(missing_ok=True)
+                # Clean up mapping
+                if key in self._plaintext_sha_map:
+                    del self._plaintext_sha_map[key]
+            except Exception:
+                pass  # Best effort cleanup
             raise CacheCorruptionError(
                 f"Decryption failed for {bucket}/{prefix}: {e}. "
-                f"Cache may be corrupted or key mismatch."
+                f"Corrupted cache deleted automatically."
             ) from e
 
         # Validate SHA of decrypted content
@@ -174,9 +182,18 @@ class EncryptedCache(CachePort):
 
         actual_sha = hashlib.sha256(decrypted_data).hexdigest()
         if actual_sha != expected_sha:
+            # SECURITY: Auto-delete corrupted cache files
+            try:
+                encrypted_path.unlink(missing_ok=True)
+                # Clean up mapping
+                if key in self._plaintext_sha_map:
+                    del self._plaintext_sha_map[key]
+            except Exception:
+                pass  # Best effort cleanup
             raise CacheCorruptionError(
                 f"Decrypted content SHA mismatch for {bucket}/{prefix}: "
-                f"expected {expected_sha}, got {actual_sha}"
+                f"expected {expected_sha}, got {actual_sha}. "
+                f"Corrupted cache deleted automatically."
             )
 
         # Write decrypted content to temporary file

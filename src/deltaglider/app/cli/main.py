@@ -75,13 +75,9 @@ def create_service(
         # Filesystem-backed with Content-Addressed Storage
         base_cache = ContentAddressedCache(cache_dir, hasher)
 
-    # Apply encryption if enabled
-    enable_encryption = os.environ.get("DG_CACHE_ENCRYPTION", "true").lower() == "true"
-    cache: CachePort
-    if enable_encryption:
-        cache = EncryptedCache.from_env(base_cache)
-    else:
-        cache = base_cache
+    # Always apply encryption with ephemeral keys (security hardening)
+    # Encryption key is optional via DG_CACHE_ENCRYPTION_KEY (ephemeral if not set)
+    cache: CachePort = EncryptedCache.from_env(base_cache)
 
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)

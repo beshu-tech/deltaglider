@@ -11,12 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - **BREAKING**: Removed all legacy shared cache code for security
+- **BREAKING**: Encryption is now ALWAYS ON (cannot be disabled)
 - Ephemeral process-isolated cache is now the ONLY mode (no opt-out)
 - **Content-Addressed Storage (CAS)**: Implemented SHA256-based cache storage
   - Zero collision risk (SHA256 namespace guarantees uniqueness)
   - Automatic deduplication (same content = same filename)
   - Tampering protection (changing content changes SHA, breaks lookup)
   - Two-level directory structure for filesystem optimization
+- **Encrypted Cache**: All cache data encrypted at rest using Fernet (AES-128-CBC + HMAC)
+  - Ephemeral encryption keys per process (forward secrecy)
+  - Optional persistent keys via `DG_CACHE_ENCRYPTION_KEY` for shared filesystems
+  - Automatic cleanup of corrupted cache files on decryption failures
 - Fixed TOCTOU vulnerabilities with atomic SHA validation at use-time
 - Added `get_validated_ref()` method to prevent cache poisoning
 - Eliminated multi-user data exposure through mandatory cache isolation
@@ -24,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **BREAKING**: Removed `DG_UNSAFE_SHARED_CACHE` environment variable
 - **BREAKING**: Removed `DG_CACHE_DIR` environment variable
+- **BREAKING**: Removed `DG_CACHE_ENCRYPTION` environment variable (encryption always on)
 - **BREAKING**: Removed `cache_dir` parameter from `create_client()`
 
 ### Changed
@@ -33,14 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - New `ContentAddressedCache` adapter in `adapters/cache_cas.py`
+- New `EncryptedCache` wrapper in `adapters/cache_encrypted.py`
+- New `MemoryCache` adapter in `adapters/cache_memory.py` with LRU eviction
 - Self-describing cache structure with SHA256-based filenames
+- Configurable cache backends via `DG_CACHE_BACKEND` (filesystem or memory)
+- Memory cache size limit via `DG_CACHE_MEMORY_SIZE_MB` (default: 100MB)
 
 ### Internal
-- Updated all tests to use Content-Addressed Storage
-- All 99 tests passing with zero errors
+- Updated all tests to use Content-Addressed Storage and encryption
+- All 119 tests passing with zero errors (99 original + 20 new cache tests)
 - Type checking: 0 errors (mypy)
 - Linting: All checks passed (ruff)
-- Completed Phase 1 & Phase 2 of SECURITY_FIX_ROADMAP.md
+- Completed Phase 1, 2, and 7 of SECURITY_FIX_ROADMAP.md
+- Added comprehensive test suites for encryption (13 tests) and memory cache (10 tests)
 
 ## [5.0.1] - 2025-01-10
 

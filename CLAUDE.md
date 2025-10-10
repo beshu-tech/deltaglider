@@ -192,14 +192,18 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 - `DG_MAX_RATIO`: Maximum acceptable delta/file ratio (default: "0.5")
 - `DG_CACHE_BACKEND`: Cache backend type - "filesystem" (default) or "memory"
 - `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size limit in MB (default: "100")
-- `DG_CACHE_ENCRYPTION`: Enable cache encryption - "true" (default) or "false"
 - `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded Fernet key for persistent encryption (ephemeral by default)
 - `AWS_ENDPOINT_URL`: Override S3 endpoint for MinIO/LocalStack
 - `AWS_ACCESS_KEY_ID`: AWS credentials
 - `AWS_SECRET_ACCESS_KEY`: AWS credentials
 - `AWS_DEFAULT_REGION`: AWS region
 
-**Note**: DeltaGlider uses ephemeral, process-isolated cache for security. Cache is automatically created in `/tmp/deltaglider-*` and cleaned up on exit. Encryption is enabled by default with ephemeral keys for forward secrecy.
+**Security Notes**:
+- **Encryption Always On**: Cache data is ALWAYS encrypted (cannot be disabled)
+- **Ephemeral Keys**: Encryption keys auto-generated per process for maximum security
+- **Auto-Cleanup**: Corrupted cache files automatically deleted on decryption failures
+- **Process Isolation**: Each process gets isolated cache in `/tmp/deltaglider-*`, cleaned up on exit
+- **Persistent Keys**: Set `DG_CACHE_ENCRYPTION_KEY` only if you need cross-process cache sharing (e.g., shared filesystems)
 
 ## Important Implementation Details
 
@@ -230,7 +234,9 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 - Use IAM roles when possible
 - All S3 operations respect bucket policies and encryption settings
 - SHA256 checksums prevent tampering and corruption
-- **Encryption at Rest**: Cache data encrypted by default using Fernet (AES-128-CBC + HMAC)
-- **Ephemeral Keys**: Encryption keys auto-generated per process for forward secrecy
-- **Persistent Keys**: Set `DG_CACHE_ENCRYPTION_KEY` for cross-process cache sharing (use secrets management)
+- **Encryption Always On**: Cache data is ALWAYS encrypted using Fernet (AES-128-CBC + HMAC) - cannot be disabled
+- **Ephemeral Keys**: Encryption keys auto-generated per process for forward secrecy and process isolation
+- **Auto-Cleanup**: Corrupted or tampered cache files automatically deleted on decryption failures
+- **Persistent Keys**: Set `DG_CACHE_ENCRYPTION_KEY` only for cross-process cache sharing (use secrets management)
 - **Content-Addressed Storage**: SHA256-based filenames prevent collision attacks
+- **Zero-Trust Cache**: All cache operations include cryptographic validation
