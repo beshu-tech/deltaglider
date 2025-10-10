@@ -44,9 +44,7 @@ class TestMemoryCache:
         memory_cache.write_ref("test-bucket", "test-prefix", test_file)
 
         # Read back
-        retrieved_path = memory_cache.get_validated_ref(
-            "test-bucket", "test-prefix", expected_sha
-        )
+        retrieved_path = memory_cache.get_validated_ref("test-bucket", "test-prefix", expected_sha)
 
         # Verify content
         assert retrieved_path.read_bytes() == test_content

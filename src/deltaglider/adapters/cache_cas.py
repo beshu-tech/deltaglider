@@ -70,7 +70,7 @@ class ContentAddressedCache(CachePort):
             raise ValueError(f"Invalid SHA256: {sha256}")
 
         # Two-level directory structure
-        l1_dir = sha256[:2]   # First 2 chars
+        l1_dir = sha256[:2]  # First 2 chars
         l2_dir = sha256[2:4]  # Next 2 chars
 
         return self.base_dir / l1_dir / l2_dir / sha256
