@@ -1,6 +1,9 @@
 """DeltaGlider client with boto3-compatible APIs and advanced features."""
 
 # ruff: noqa: I001
+import atexit
+import os
+import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -1122,6 +1125,23 @@ def create_client(
         XdeltaAdapter,
     )
 
+    # SECURITY: Use ephemeral cache by default to prevent multi-user attacks
+    if os.environ.get("DG_UNSAFE_SHARED_CACHE") != "true":
+        # Create process-specific temporary cache directory
+        actual_cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
+        # Register cleanup handler to remove cache on exit
+        atexit.register(lambda: shutil.rmtree(actual_cache_dir, ignore_errors=True))
+    else:
+        # Legacy shared cache mode - UNSAFE in multi-user environments
+        actual_cache_dir = Path(cache_dir)
+        # Create logger early to issue warning
+        temp_logger = StdLoggerAdapter(level=log_level)
+        temp_logger.warning(
+            "SECURITY WARNING: Shared cache mode enabled (DG_UNSAFE_SHARED_CACHE=true). "
+            "This mode has known security vulnerabilities in multi-user environments. "
+            "Use at your own risk!"
+        )
+
     # Build boto3 client kwargs
     boto3_kwargs = {}
     if aws_access_key_id is not None:
@@ -1137,7 +1157,7 @@ def create_client(
     hasher = Sha256Adapter()
     storage = S3StorageAdapter(endpoint_url=endpoint_url, boto3_kwargs=boto3_kwargs)
     diff = XdeltaAdapter()
-    cache = FsCacheAdapter(Path(cache_dir), hasher)
+    cache = FsCacheAdapter(actual_cache_dir, hasher)
     clock = UtcClockAdapter()
     logger = StdLoggerAdapter(level=log_level)
     metrics = NoopMetricsAdapter()

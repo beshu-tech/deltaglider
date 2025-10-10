@@ -47,3 +47,15 @@ class PolicyViolationWarning(Warning):
     """Policy violation warning."""
 
     pass
+
+
+class CacheMissError(DeltaGliderError):
+    """Cache miss - file not found in cache."""
+
+    pass
+
+
+class CacheCorruptionError(DeltaGliderError):
+    """Cache corruption - SHA mismatch or tampering detected."""
+
+    pass

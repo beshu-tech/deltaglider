@@ -230,7 +230,10 @@ class DeltaService:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             delta_path = tmp_path / "delta"
-            ref_path = self.cache.ref_path(delta_space.bucket, delta_space.prefix)
+            # SECURITY: Use validated ref to prevent TOCTOU attacks
+            ref_path = self.cache.get_validated_ref(
+                delta_space.bucket, delta_space.prefix, delta_meta.ref_sha256
+            )
             out_path = tmp_path / "output"
 
             # Download delta
@@ -408,7 +411,8 @@ class DeltaService:
         if not cache_hit:
             self._cache_reference(delta_space, ref_sha256)
 
-        ref_path = self.cache.ref_path(delta_space.bucket, delta_space.prefix)
+        # SECURITY: Use validated ref to prevent TOCTOU attacks
+        ref_path = self.cache.get_validated_ref(delta_space.bucket, delta_space.prefix, ref_sha256)
 
         # Create delta
         with tempfile.NamedTemporaryFile(suffix=".delta") as delta_file:
