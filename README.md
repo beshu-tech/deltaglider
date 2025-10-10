@@ -46,6 +46,60 @@ uv pip install deltaglider
 docker run -v ~/.aws:/root/.aws deltaglider/deltaglider --help
 ```
 
+### Docker Usage
+
+DeltaGlider provides a secure, production-ready Docker image with encryption always enabled:
+
+```bash
+# Basic usage with AWS credentials from environment
+docker run -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+  deltaglider/deltaglider ls s3://my-bucket/
+
+# Mount AWS credentials
+docker run -v ~/.aws:/root/.aws:ro \
+  deltaglider/deltaglider cp file.zip s3://releases/
+
+# Use memory cache for ephemeral CI/CD pipelines (faster)
+docker run -e DG_CACHE_BACKEND=memory \
+  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+  deltaglider/deltaglider sync ./dist/ s3://releases/v1.0.0/
+
+# Configure memory cache size (default: 100MB)
+docker run -e DG_CACHE_BACKEND=memory \
+  -e DG_CACHE_MEMORY_SIZE_MB=500 \
+  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+  deltaglider/deltaglider cp large-file.zip s3://releases/
+
+# Use MinIO or custom S3 endpoint
+docker run -e AWS_ENDPOINT_URL=http://minio:9000 \
+  -e AWS_ACCESS_KEY_ID=minioadmin \
+  -e AWS_SECRET_ACCESS_KEY=minioadmin \
+  deltaglider/deltaglider ls s3://test-bucket/
+
+# Persistent encryption key for cross-container cache sharing
+# (Only needed if sharing cache across containers via volume mount)
+docker run -v /shared-cache:/tmp/.deltaglider \
+  -e DG_CACHE_ENCRYPTION_KEY=$(openssl rand -base64 32) \
+  deltaglider/deltaglider cp file.zip s3://releases/
+```
+
+**Environment Variables**:
+- `DG_LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
+- `DG_MAX_RATIO`: Maximum delta/file ratio (default: `0.5`, range: `0.0-1.0`)
+- `DG_CACHE_BACKEND`: Cache backend (default: `filesystem`, options: `filesystem`, `memory`)
+- `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size in MB (default: `100`)
+- `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded encryption key for cross-process cache sharing
+- `AWS_ENDPOINT_URL`: S3 endpoint URL (default: AWS S3)
+- `AWS_ACCESS_KEY_ID`: AWS access key
+- `AWS_SECRET_ACCESS_KEY`: AWS secret key
+- `AWS_DEFAULT_REGION`: AWS region (default: `us-east-1`)
+
+**Security Notes**:
+- Encryption is **always enabled** (cannot be disabled)
+- Each container gets ephemeral encryption keys for maximum security
+- Corrupted cache files are automatically deleted
+- Use `DG_CACHE_ENCRYPTION_KEY` only for persistent cache sharing (store securely)
+
 ### Basic Usage
 
 ```bash

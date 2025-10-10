@@ -69,6 +69,38 @@ Or via environment variable:
 export AWS_ENDPOINT_URL=http://minio.local:9000
 ```
 
+### DeltaGlider Configuration
+
+DeltaGlider supports the following environment variables:
+
+**Logging & Performance**:
+- `DG_LOG_LEVEL`: Logging level (default: `INFO`, options: `DEBUG`, `INFO`, `WARNING`, `ERROR`)
+- `DG_MAX_RATIO`: Maximum delta/file ratio (default: `0.5`, range: `0.0-1.0`)
+
+**Cache Configuration**:
+- `DG_CACHE_BACKEND`: Cache backend type (default: `filesystem`, options: `filesystem`, `memory`)
+- `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size in MB (default: `100`)
+- `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded Fernet key for persistent encryption
+
+**Security**:
+- Encryption is **always enabled** (cannot be disabled)
+- Ephemeral encryption keys per process (forward secrecy)
+- Corrupted cache files automatically deleted
+- Set `DG_CACHE_ENCRYPTION_KEY` only for cross-process cache sharing
+
+**Example**:
+```bash
+# Use memory cache for faster performance in CI/CD
+export DG_CACHE_BACKEND=memory
+export DG_CACHE_MEMORY_SIZE_MB=500
+
+# Enable debug logging
+export DG_LOG_LEVEL=DEBUG
+
+# Adjust delta compression threshold
+export DG_MAX_RATIO=0.3  # More aggressive compression
+```
+
 ## Your First Upload
 
 ### Basic Example

@@ -66,10 +66,28 @@ USER deltaglider
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD deltaglider --help || exit 1
 
+# Environment variables (all optional, can be overridden at runtime)
+# Logging
+ENV DG_LOG_LEVEL=INFO
+
+# Performance & Compression
+ENV DG_MAX_RATIO=0.5
+
+# Cache Configuration
+ENV DG_CACHE_BACKEND=filesystem
+ENV DG_CACHE_MEMORY_SIZE_MB=100
+# ENV DG_CACHE_ENCRYPTION_KEY=<base64-key>  # Optional: Set for cross-process cache sharing
+
+# AWS Configuration (override at runtime)
+# ENV AWS_ENDPOINT_URL=https://s3.amazonaws.com
+# ENV AWS_ACCESS_KEY_ID=<your-key>
+# ENV AWS_SECRET_ACCESS_KEY=<your-secret>
+# ENV AWS_DEFAULT_REGION=us-east-1
+
 # Labels
 LABEL org.opencontainers.image.title="DeltaGlider" \
-      org.opencontainers.image.description="Delta-aware S3 file storage wrapper" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.description="Delta-aware S3 file storage wrapper with encryption" \
+      org.opencontainers.image.version="5.0.3" \
       org.opencontainers.image.authors="Beshu Limited" \
       org.opencontainers.image.source="https://github.com/beshu-tech/deltaglider"
 
