@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.1] - 2025-01-10
+
+### Fixed
+- **Stats Command**: Fixed incorrect compression ratio calculations
+  - Now correctly counts ALL files including reference.bin in compressed size
+  - Fixed handling of orphaned reference.bin files (reference files with no delta files)
+  - Added prominent warnings for orphaned reference files with cleanup commands
+  - Fixed stats for buckets with no compression (now shows 0% instead of negative)
+  - SHA1 checksum files are now properly included in calculations
+
+### Improved
+- **Stats Performance**: Optimized metadata fetching with parallel requests
+  - 5-10x faster for buckets with many delta files
+  - Uses ThreadPoolExecutor for concurrent HEAD requests
+  - Single-pass calculation algorithm for better efficiency
+
 ## [5.1.0] - 2025-10-10
 
 ### Added
