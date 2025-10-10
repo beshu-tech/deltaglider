@@ -74,6 +74,17 @@ export AWS_SECRET_ACCESS_KEY=minioadmin
 
 # Now you can use deltaglider commands
 deltaglider cp test.zip s3://test-bucket/
+deltaglider stats test-bucket                  # Get bucket statistics
+```
+
+### Available CLI Commands
+```bash
+cp      # Copy files to/from S3 (AWS S3 compatible)
+ls      # List S3 buckets or objects (AWS S3 compatible)
+rm      # Remove S3 objects (AWS S3 compatible)
+sync    # Synchronize directories with S3 (AWS S3 compatible)
+stats   # Get bucket statistics and compression metrics
+verify  # Verify integrity of delta file
 ```
 
 ## Architecture

@@ -1,11 +1,13 @@
 """Tests for bucket management APIs."""
 
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
 
 from deltaglider.app.cli.main import create_service
 from deltaglider.client import DeltaGliderClient
+from deltaglider.client_models import BucketStats
 
 
 class TestBucketManagement:
@@ -123,6 +125,47 @@ class TestBucketManagement:
         assert response["Buckets"] == []
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
+    def test_list_buckets_includes_cached_stats(self):
+        """Bucket list should merge cached stats when available."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.list_buckets.return_value = {
+            "Buckets": [
+                {"Name": "bucket1", "CreationDate": "2025-01-01T00:00:00Z"},
+                {"Name": "bucket2", "CreationDate": "2025-01-02T00:00:00Z"},
+            ],
+            "Owner": {"DisplayName": "test-user", "ID": "12345"},
+        }
+        mock_storage.client = mock_boto3_client
+
+        client = DeltaGliderClient(service)
+
+        cached_stats = BucketStats(
+            bucket="bucket1",
+            object_count=10,
+            total_size=1000,
+            compressed_size=600,
+            space_saved=400,
+            average_compression_ratio=0.4,
+            delta_objects=6,
+            direct_objects=4,
+        )
+        client._store_bucket_stats_cache("bucket1", detailed_stats=True, stats=cached_stats)
+
+        response = client.list_buckets()
+
+        bucket1 = next(bucket for bucket in response["Buckets"] if bucket["Name"] == "bucket1")
+        assert bucket1["DeltaGliderStats"]["Cached"] is True
+        assert bucket1["DeltaGliderStats"]["Detailed"] is True
+        assert bucket1["DeltaGliderStats"]["ObjectCount"] == cached_stats.object_count
+        assert bucket1["DeltaGliderStats"]["TotalSize"] == cached_stats.total_size
+
+        bucket2 = next(bucket for bucket in response["Buckets"] if bucket["Name"] == "bucket2")
+        assert "DeltaGliderStats" not in bucket2
+
     def test_delete_bucket_success(self):
         """Test deleting a bucket successfully."""
         service = create_service()
@@ -177,6 +220,69 @@ class TestBucketManagement:
 
         with pytest.raises(RuntimeError, match="Failed to delete bucket"):
             client.delete_bucket(Bucket="full-bucket")
+
+    def test_get_bucket_stats_caches_per_session(self, monkeypatch):
+        """Verify bucket stats are cached within the client session."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_storage.client = Mock()
+
+        client = DeltaGliderClient(service)
+
+        quick_stats = BucketStats(
+            bucket="bucket1",
+            object_count=5,
+            total_size=500,
+            compressed_size=300,
+            space_saved=200,
+            average_compression_ratio=0.4,
+            delta_objects=3,
+            direct_objects=2,
+        )
+        detailed_stats = BucketStats(
+            bucket="bucket1",
+            object_count=5,
+            total_size=520,
+            compressed_size=300,
+            space_saved=220,
+            average_compression_ratio=0.423,
+            delta_objects=3,
+            direct_objects=2,
+        )
+
+        call_count = {"value": 0}
+
+        def fake_get_bucket_stats(_: Any, bucket: str, detailed_stats_flag: bool) -> BucketStats:
+            call_count["value"] += 1
+            assert bucket == "bucket1"
+            return detailed_stats if detailed_stats_flag else quick_stats
+
+        monkeypatch.setattr("deltaglider.client._get_bucket_stats", fake_get_bucket_stats)
+
+        # First call should invoke underlying function
+        result_quick = client.get_bucket_stats("bucket1")
+        assert result_quick is quick_stats
+        assert call_count["value"] == 1
+
+        # Second quick call should hit cache
+        assert client.get_bucket_stats("bucket1") is quick_stats
+        assert call_count["value"] == 1
+
+        # Detailed call triggers new computation
+        result_detailed = client.get_bucket_stats("bucket1", detailed_stats=True)
+        assert result_detailed is detailed_stats
+        assert call_count["value"] == 2
+
+        # Quick call after detailed uses detailed cached value (more accurate)
+        assert client.get_bucket_stats("bucket1") is detailed_stats
+        assert call_count["value"] == 2
+
+        # Clearing the cache should force recomputation
+        client.clear_cache()
+        assert client.get_bucket_stats("bucket1") is quick_stats
+        assert call_count["value"] == 3
 
     def test_bucket_methods_without_boto3_client(self):
         """Test that bucket methods raise NotImplementedError when storage doesn't support it."""

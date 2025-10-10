@@ -189,6 +189,13 @@ deltaglider sync s3://releases/ ./local-backup/   # Sync from S3
 deltaglider sync --delete ./src/ s3://backup/     # Mirror exactly
 deltaglider sync --exclude "*.log" ./src/ s3://backup/  # Exclude patterns
 
+# Get bucket statistics (compression metrics)
+deltaglider stats my-bucket                       # Quick stats overview
+deltaglider stats s3://my-bucket                  # Also accepts s3:// format
+deltaglider stats s3://my-bucket/                 # With or without trailing slash
+deltaglider stats my-bucket --detailed            # Detailed compression metrics (slower)
+deltaglider stats my-bucket --json                # JSON output for automation
+
 # Works with MinIO, R2, and S3-compatible storage
 deltaglider cp file.zip s3://bucket/ --endpoint-url http://localhost:9000
 ```

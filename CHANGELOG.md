@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0] - 2025-10-10
+
+### Added
+- **New CLI Command**: `deltaglider stats <bucket>` for bucket statistics and compression metrics
+  - Supports `--detailed` flag for comprehensive analysis
+  - Supports `--json` flag for machine-readable output
+  - Accepts multiple formats: `s3://bucket/`, `s3://bucket`, `bucket`
+- **Session-Level Statistics Caching**: Bucket stats now cached per client instance
+  - Automatic cache invalidation on mutations (put, delete, bucket operations)
+  - Intelligent cache reuse (detailed stats serve quick stat requests)
+  - Enhanced `list_buckets()` includes cached stats when available
+- **Programmatic Cache Management**: Added cache management APIs for long-running applications
+  - `clear_cache()`: Clear all cached references
+  - `evict_cache()`: Remove specific cached reference
+  - Session-scoped cache lifecycle management
+
+### Changed
+- Bucket statistics are now cached within client session for performance
+- `list_buckets()` response includes `DeltaGliderStats` metadata when cached
+
+### Documentation
+- Added comprehensive DG_MAX_RATIO tuning guide in docs/
+- Updated CLI command reference in CLAUDE.md and README.md
+- Added detailed cache management documentation
+
 ## [5.0.3] - 2025-10-10
 
 ### Security

@@ -138,10 +138,32 @@ def list_buckets(
     # Check if storage adapter has boto3 client
     if hasattr(storage_adapter, "client"):
         try:
-            response = storage_adapter.client.list_buckets()
+            raw_response = storage_adapter.client.list_buckets()
+
+            buckets: list[dict[str, Any]] = []
+            for bucket_entry in raw_response.get("Buckets", []):
+                bucket_data = dict(bucket_entry)
+                name = bucket_data.get("Name")
+                if isinstance(name, str) and name:
+                    cached_stats, detailed = client._get_cached_bucket_stats_for_listing(name)
+                    if cached_stats is not None:
+                        bucket_data["DeltaGliderStats"] = {
+                            "Cached": True,
+                            "Detailed": detailed,
+                            "ObjectCount": cached_stats.object_count,
+                            "TotalSize": cached_stats.total_size,
+                            "CompressedSize": cached_stats.compressed_size,
+                            "SpaceSaved": cached_stats.space_saved,
+                            "AverageCompressionRatio": cached_stats.average_compression_ratio,
+                            "DeltaObjects": cached_stats.delta_objects,
+                            "DirectObjects": cached_stats.direct_objects,
+                        }
+
+                buckets.append(bucket_data)
+
             return {
-                "Buckets": response.get("Buckets", []),
-                "Owner": response.get("Owner", {}),
+                "Buckets": buckets,
+                "Owner": raw_response.get("Owner", {}),
                 "ResponseMetadata": {
                     "HTTPStatusCode": 200,
                 },

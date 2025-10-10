@@ -640,6 +640,84 @@ def verify(service: DeltaService, s3_url: str) -> None:
         sys.exit(1)
 
 
+@cli.command()
+@click.argument("bucket")
+@click.option("--detailed", is_flag=True, help="Fetch detailed compression metrics (slower)")
+@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
+@click.pass_obj
+def stats(service: DeltaService, bucket: str, detailed: bool, output_json: bool) -> None:
+    """Get bucket statistics and compression metrics.
+
+    BUCKET can be specified as:
+      - s3://bucket-name/
+      - s3://bucket-name
+      - bucket-name
+    """
+    from ...client import DeltaGliderClient
+
+    try:
+        # Parse bucket from S3 URL if needed
+        if bucket.startswith("s3://"):
+            # Remove s3:// prefix and any trailing slashes
+            bucket = bucket[5:].rstrip("/")
+            # Extract just the bucket name (first path component)
+            bucket = bucket.split("/")[0] if "/" in bucket else bucket
+
+        if not bucket:
+            click.echo("Error: Invalid bucket name", err=True)
+            sys.exit(1)
+
+        # Create client from service
+        client = DeltaGliderClient(service=service)
+
+        # Get bucket stats
+        bucket_stats = client.get_bucket_stats(bucket, detailed_stats=detailed)
+
+        if output_json:
+            # JSON output
+            output = {
+                "bucket": bucket_stats.bucket,
+                "object_count": bucket_stats.object_count,
+                "total_size": bucket_stats.total_size,
+                "compressed_size": bucket_stats.compressed_size,
+                "space_saved": bucket_stats.space_saved,
+                "average_compression_ratio": bucket_stats.average_compression_ratio,
+                "delta_objects": bucket_stats.delta_objects,
+                "direct_objects": bucket_stats.direct_objects,
+            }
+            click.echo(json.dumps(output, indent=2))
+        else:
+            # Human-readable output
+            def format_bytes(size: float) -> str:
+                """Format bytes to human-readable size."""
+                for unit in ["B", "KB", "MB", "GB", "TB"]:
+                    if size < 1024.0:
+                        return f"{size:.2f} {unit}"
+                    size /= 1024.0
+                return f"{size:.2f} PB"
+
+            click.echo(f"Bucket Statistics: {bucket_stats.bucket}")
+            click.echo(f"{'=' * 60}")
+            click.echo(f"Total Objects:        {bucket_stats.object_count:,}")
+            click.echo(f"  Delta Objects:      {bucket_stats.delta_objects:,}")
+            click.echo(f"  Direct Objects:     {bucket_stats.direct_objects:,}")
+            click.echo("")
+            click.echo(
+                f"Original Size:        {format_bytes(bucket_stats.total_size)} ({bucket_stats.total_size:,} bytes)"
+            )
+            click.echo(
+                f"Compressed Size:      {format_bytes(bucket_stats.compressed_size)} ({bucket_stats.compressed_size:,} bytes)"
+            )
+            click.echo(
+                f"Space Saved:          {format_bytes(bucket_stats.space_saved)} ({bucket_stats.space_saved:,} bytes)"
+            )
+            click.echo(f"Compression Ratio:    {bucket_stats.average_compression_ratio:.1%}")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 def main() -> None:
     """Main entry point."""
     cli()
