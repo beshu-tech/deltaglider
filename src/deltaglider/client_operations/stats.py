@@ -89,82 +89,156 @@ def get_bucket_stats(
         stats = client.get_bucket_stats('releases', detailed_stats=True)
         print(f"Compression ratio: {stats.average_compression_ratio:.1%}")
     """
-    # List all objects with smart metadata fetching
+    # List all objects DIRECTLY from storage adapter to see reference.bin files
+    # (client.list_objects filters them out for user-facing operations)
     all_objects = []
-    continuation_token = None
+    start_after = None
 
     while True:
-        response = client.list_objects(
-            Bucket=bucket,
-            MaxKeys=1000,
-            ContinuationToken=continuation_token,
-            FetchMetadata=detailed_stats,  # Only fetch metadata if detailed stats requested
+        # Call storage adapter directly to see ALL files including reference.bin
+        response = client.service.storage.list_objects(
+            bucket=bucket,
+            prefix="",
+            max_keys=1000,
+            start_after=start_after,
         )
 
-        # Extract S3Objects from response (with Metadata containing DeltaGlider info)
-        for obj_dict in response["Contents"]:
-            # Convert dict back to ObjectInfo for backward compatibility with stats calculation
-            metadata = obj_dict.get("Metadata", {})
-            # Parse compression ratio safely (handle "unknown" value)
-            compression_ratio_str = metadata.get("deltaglider-compression-ratio", "0.0")
-            try:
-                compression_ratio = (
-                    float(compression_ratio_str) if compression_ratio_str != "unknown" else 0.0
-                )
-            except ValueError:
-                compression_ratio = 0.0
+        # Process raw objects from storage adapter (lowercase keys)
+        for obj_dict in response.get("objects", []):
+            key = obj_dict["key"]
+            size = obj_dict["size"]
+            is_delta = key.endswith(".delta")
+
+            # For delta files, fetch metadata to get original size
+            metadata = {}
+            if is_delta:
+                # Fetch full object metadata for delta files
+                obj_head = client.service.storage.head(f"{bucket}/{key}")
+                if obj_head:
+                    metadata = obj_head.metadata
+
+            # Parse compression ratio safely
+            compression_ratio = 0.0
+            original_size = size
+            if is_delta and metadata:
+                try:
+                    ratio_str = metadata.get("compression_ratio", "0.0")
+                    compression_ratio = float(ratio_str) if ratio_str != "unknown" else 0.0
+                except (ValueError, TypeError):
+                    compression_ratio = 0.0
+                try:
+                    original_size = int(metadata.get("file_size", size))
+                    client.service.logger.debug(f"Delta {key}: using original_size={original_size}")
+                except (ValueError, TypeError):
+                    original_size = size
 
             all_objects.append(
                 ObjectInfo(
-                    key=obj_dict["Key"],
-                    size=obj_dict["Size"],
-                    last_modified=obj_dict.get("LastModified", ""),
-                    etag=obj_dict.get("ETag"),
-                    storage_class=obj_dict.get("StorageClass", "STANDARD"),
-                    original_size=int(metadata.get("deltaglider-original-size", obj_dict["Size"])),
-                    compressed_size=obj_dict["Size"],
-                    is_delta=metadata.get("deltaglider-is-delta", "false") == "true",
+                    key=key,
+                    size=size,
+                    last_modified=obj_dict.get("last_modified", ""),
+                    etag=obj_dict.get("etag"),
+                    storage_class=obj_dict.get("storage_class", "STANDARD"),
+                    original_size=original_size,
+                    compressed_size=size,
+                    is_delta=is_delta,
                     compression_ratio=compression_ratio,
-                    reference_key=metadata.get("deltaglider-reference-key"),
+                    reference_key=metadata.get("ref_key") if metadata else None,
                 )
             )
 
-        if not response.get("IsTruncated"):
+        if not response.get("is_truncated"):
             break
 
-        continuation_token = response.get("NextContinuationToken")
+        start_after = response.get("next_continuation_token")
 
-    # Calculate statistics
-    total_size = 0
-    compressed_size = 0
+    # Calculate statistics - COUNT ALL FILES
+    total_original_size = 0
+    total_compressed_size = 0
     delta_count = 0
     direct_count = 0
+    reference_files = {}  # Track all reference.bin files and their deltaspaces
 
+    # First pass: identify what we have
     for obj in all_objects:
-        # Skip reference.bin files - they are internal implementation details
-        # and their size is already accounted for in delta metadata
+        if obj.key.endswith("/reference.bin") or obj.key == "reference.bin":
+            # Extract deltaspace prefix
+            if "/" in obj.key:
+                deltaspace = obj.key.rsplit("/reference.bin", 1)[0]
+            else:
+                deltaspace = ""  # Root level reference.bin
+            reference_files[deltaspace] = obj.size
+        elif obj.is_delta:
+            delta_count += 1
+        else:
+            direct_count += 1
+
+    # Second pass: calculate sizes
+    for obj in all_objects:
+        # Skip reference.bin in this pass (we'll handle it separately)
         if obj.key.endswith("/reference.bin") or obj.key == "reference.bin":
             continue
 
-        compressed_size += obj.size
-
         if obj.is_delta:
-            delta_count += 1
-            # Use actual original size if we have it, otherwise estimate
-            total_size += obj.original_size or obj.size
+            # Delta file: original from metadata, compressed = delta size
+            if obj.original_size and obj.original_size != obj.size:
+                client.service.logger.debug(
+                    f"Delta {obj.key}: using original_size={obj.original_size}"
+                )
+                total_original_size += obj.original_size
+            else:
+                client.service.logger.warning(
+                    f"Delta {obj.key}: no original_size, using compressed size={obj.size}"
+                )
+                total_original_size += obj.size
+            total_compressed_size += obj.size
         else:
-            direct_count += 1
-            # For non-delta files, original equals compressed
-            total_size += obj.size
+            # Direct files: original = compressed = actual size
+            total_original_size += obj.size
+            total_compressed_size += obj.size
 
-    space_saved = total_size - compressed_size
-    avg_ratio = (space_saved / total_size) if total_size > 0 else 0.0
+    # Handle reference.bin files
+    total_reference_size = sum(reference_files.values())
+
+    if delta_count > 0 and total_reference_size > 0:
+        # Add all reference.bin files to compressed size
+        total_compressed_size += total_reference_size
+        client.service.logger.info(f"Including {len(reference_files)} reference.bin file(s) ({total_reference_size:,} bytes) in compressed size")
+    elif delta_count == 0 and total_reference_size > 0:
+        # ORPHANED REFERENCE WARNING
+        waste_mb = total_reference_size / 1024 / 1024
+        client.service.logger.warning(
+            f"\n{'='*60}\n"
+            f"WARNING: ORPHANED REFERENCE FILE(S) DETECTED!\n"
+            f"{'='*60}\n"
+            f"Found {len(reference_files)} reference.bin file(s) totaling {total_reference_size:,} bytes ({waste_mb:.2f} MB)\n"
+            f"but NO delta files are using them.\n"
+            f"\n"
+            f"This wastes {waste_mb:.2f} MB of storage!\n"
+            f"\n"
+            f"Orphaned reference files:\n"
+        )
+        for deltaspace, size in reference_files.items():
+            path = f"{deltaspace}/reference.bin" if deltaspace else "reference.bin"
+            client.service.logger.warning(f"  - s3://{bucket}/{path} ({size:,} bytes)")
+
+        client.service.logger.warning(
+            f"\nConsider removing these orphaned files:\n"
+        )
+        for deltaspace in reference_files:
+            path = f"{deltaspace}/reference.bin" if deltaspace else "reference.bin"
+            client.service.logger.warning(f"  aws s3 rm s3://{bucket}/{path}")
+
+        client.service.logger.warning(f"{'='*60}")
+
+    space_saved = total_original_size - total_compressed_size
+    avg_ratio = (space_saved / total_original_size) if total_original_size > 0 else 0.0
 
     return BucketStats(
         bucket=bucket,
-        object_count=len(all_objects),
-        total_size=total_size,
-        compressed_size=compressed_size,
+        object_count=delta_count + direct_count,  # Only count user files, not reference.bin
+        total_size=total_original_size,
+        compressed_size=total_compressed_size,
         space_saved=space_saved,
         average_compression_ratio=avg_ratio,
         delta_objects=delta_count,
