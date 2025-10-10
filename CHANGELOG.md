@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.3] - 2025-10-10
+
+### Security
+- **BREAKING**: Removed all legacy shared cache code for security
+- Ephemeral process-isolated cache is now the ONLY mode (no opt-out)
+- Fixed TOCTOU vulnerabilities with atomic SHA validation at use-time
+- Added `get_validated_ref()` method to prevent cache poisoning
+- Eliminated multi-user data exposure through mandatory cache isolation
+
+### Removed
+- **BREAKING**: Removed `DG_UNSAFE_SHARED_CACHE` environment variable
+- **BREAKING**: Removed `DG_CACHE_DIR` environment variable
+- **BREAKING**: Removed `cache_dir` parameter from `create_client()`
+
+### Changed
+- Cache is now auto-created in `/tmp/deltaglider-*` and cleaned on exit
+- All cache operations use file locking (Unix) and SHA validation
+- Added `CacheMissError` and `CacheCorruptionError` exceptions
+
+### Internal
+- Updated all tests to use ephemeral cache
+- All 99 tests passing
+- Completed Phase 1 of SECURITY_FIX_ROADMAP.md
+
 ## [5.0.1] - 2025-01-10
 
 ### Changed
