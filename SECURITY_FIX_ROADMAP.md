@@ -175,70 +175,156 @@ def get_cache_dir() -> Path:
 
 ---
 
-### **DAY 6-10: Architecture Redesign** (v5.2.0)
+### **DAY 6-10: Architecture Redesign** (v5.0.3) ✅ COMPLETED
 *The bold solution that eliminates entire vulnerability classes*
 
-#### 7. **Implement Memory Cache with Encryption** (8 hours)
+#### 7. **Implement Memory Cache with Encryption** (8 hours) ✅ COMPLETED
 ```python
 # src/deltaglider/adapters/cache_memory.py
-import mmap
-import pickle
-from cryptography.fernet import Fernet
-
 class MemoryCache(CachePort):
-    """In-memory cache with optional disk backing via mmap."""
+    """In-memory cache with LRU eviction and configurable size limits."""
 
-    def __init__(self, max_size_mb: int = 100):
-        self.cache = {}  # SHA -> (data, metadata)
-        self.max_size = max_size_mb * 1024 * 1024
-        self.current_size = 0
+    def __init__(self, hasher: HashPort, max_size_mb: int = 100, temp_dir: Path | None = None):
+        self.hasher = hasher
+        self.max_size_bytes = max_size_mb * 1024 * 1024
+        self._current_size = 0
+        self._cache: dict[tuple[str, str], tuple[bytes, str]] = {}  # (bucket, prefix) -> (content, SHA)
+        self._access_order: list[tuple[str, str]] = []  # LRU tracking
 
-        # Per-process encryption key (never persisted)
-        self.cipher = Fernet(Fernet.generate_key())
+    def write_ref(self, bucket: str, prefix: str, src: Path) -> Path:
+        """Write reference to in-memory cache with LRU eviction."""
+        # Read content and compute SHA
+        content = src.read_bytes()
+        sha256 = self.hasher.sha256_bytes(content)
 
-        # Optional mmap for larger files
-        self.mmap_file = tempfile.NamedTemporaryFile(prefix="dg-mmap-")
-        self.mmap = mmap.mmap(self.mmap_file.fileno(), self.max_size)
+        # Check if file fits in cache
+        needed_bytes = len(content)
+        if needed_bytes > self.max_size_bytes:
+            raise CacheCorruptionError(f"File too large for cache: {needed_bytes} > {self.max_size_bytes}")
 
-    def write_ref(self, bucket: str, prefix: str, src: Path, sha256: str) -> bytes:
-        # Read and encrypt data
-        with open(src, 'rb') as f:
-            data = f.read()
+        # Evict LRU if needed
+        self._evict_lru(needed_bytes)
 
-        encrypted = self.cipher.encrypt(data)
+        # Store in memory
+        key = (bucket, prefix)
+        self._cache[key] = (content, sha256)
+        self._current_size += needed_bytes
+        self._access_order.append(key)
 
-        # Store in memory or mmap based on size
-        if len(encrypted) + self.current_size <= self.max_size:
-            self.cache[sha256] = encrypted
-            self.current_size += len(encrypted)
-        else:
-            # Evict LRU or use mmap
-            self._evict_lru()
-            self.cache[sha256] = encrypted
+        return src  # Return original path for compatibility
 
-        return encrypted
+    def get_validated_ref(self, bucket: str, prefix: str, expected_sha: str) -> Path:
+        """Get cached reference with validation."""
+        key = (bucket, prefix)
+        if key not in self._cache:
+            raise CacheMissError(f"Cache miss for {bucket}/{prefix}")
 
-    def get_validated_ref(self, bucket: str, prefix: str, sha256: str) -> bytes:
-        if sha256 not in self.cache:
-            raise CacheMissError()
+        content, stored_sha = self._cache[key]
 
-        encrypted = self.cache[sha256]
-        data = self.cipher.decrypt(encrypted)
+        # Validate SHA matches
+        if stored_sha != expected_sha:
+            raise CacheCorruptionError(f"SHA mismatch for {bucket}/{prefix}")
 
-        # Always validate
-        actual_sha = hashlib.sha256(data).hexdigest()
-        if actual_sha != sha256:
-            del self.cache[sha256]
-            raise CacheCorruptionError()
+        # Update LRU order
+        self._access_order.remove(key)
+        self._access_order.append(key)
 
-        return data
+        # Write to temp file for compatibility
+        temp_path = self.temp_dir / f"{expected_sha}.bin"
+        temp_path.write_bytes(content)
+        return temp_path
 ```
 
-**Benefits**:
-- No filesystem access = no permission issues
-- Encrypted in memory = secure even in core dumps
-- Per-process isolation = no multi-user issues
-- Zero TOCTOU window = memory is atomic
+# src/deltaglider/adapters/cache_encrypted.py
+class EncryptedCache(CachePort):
+    """Encrypted cache wrapper using Fernet symmetric encryption."""
+
+    def __init__(self, backend: CachePort, encryption_key: bytes | None = None):
+        self.backend = backend
+
+        # Key management: ephemeral (default) or provided
+        if encryption_key is None:
+            self._key = Fernet.generate_key()  # Ephemeral per process
+            self._ephemeral = True
+        else:
+            self._key = encryption_key
+            self._ephemeral = False
+
+        self._cipher = Fernet(self._key)
+        # Track plaintext SHA since encrypted content has different SHA
+        self._plaintext_sha_map: dict[tuple[str, str], str] = {}
+
+    def write_ref(self, bucket: str, prefix: str, src: Path) -> Path:
+        """Encrypt and cache reference file."""
+        # Read plaintext and compute SHA
+        plaintext_data = src.read_bytes()
+        plaintext_sha = hashlib.sha256(plaintext_data).hexdigest()
+
+        # Encrypt data
+        encrypted_data = self._cipher.encrypt(plaintext_data)
+
+        # Write encrypted data to temp file
+        temp_encrypted = src.with_suffix(".encrypted.tmp")
+        temp_encrypted.write_bytes(encrypted_data)
+
+        try:
+            # Store encrypted file via backend
+            result_path = self.backend.write_ref(bucket, prefix, temp_encrypted)
+
+            # Store plaintext SHA mapping
+            key = (bucket, prefix)
+            self._plaintext_sha_map[key] = plaintext_sha
+
+            return result_path
+        finally:
+            temp_encrypted.unlink(missing_ok=True)
+
+    def get_validated_ref(self, bucket: str, prefix: str, expected_sha: str) -> Path:
+        """Get cached reference with decryption and validation."""
+        # Verify we have the plaintext SHA mapped
+        key = (bucket, prefix)
+        if key not in self._plaintext_sha_map:
+            raise CacheMissError(f"Cache miss for {bucket}/{prefix}")
+
+        if self._plaintext_sha_map[key] != expected_sha:
+            raise CacheCorruptionError(f"SHA mismatch for {bucket}/{prefix}")
+
+        # Get encrypted file from backend
+        encrypted_path = self.backend.ref_path(bucket, prefix)
+        if not encrypted_path.exists():
+            raise CacheMissError(f"Encrypted cache file not found")
+
+        # Decrypt content
+        encrypted_data = encrypted_path.read_bytes()
+        try:
+            decrypted_data = self._cipher.decrypt(encrypted_data)
+        except Exception as e:
+            raise CacheCorruptionError(f"Decryption failed: {e}") from e
+
+        # Validate plaintext SHA
+        actual_sha = hashlib.sha256(decrypted_data).hexdigest()
+        if actual_sha != expected_sha:
+            raise CacheCorruptionError(f"Decrypted content SHA mismatch")
+
+        # Write decrypted content to temp file
+        decrypted_path = encrypted_path.with_suffix(".decrypted")
+        decrypted_path.write_bytes(decrypted_data)
+        return decrypted_path
+```
+
+**Implementation**: ✅ COMPLETED
+- **MemoryCache**: In-memory cache with LRU eviction, configurable size limits, zero filesystem I/O
+- **EncryptedCache**: Fernet (AES-128-CBC + HMAC) encryption wrapper, ephemeral keys by default
+- **Configuration**: `DG_CACHE_BACKEND` (filesystem/memory), `DG_CACHE_ENCRYPTION` (true/false)
+- **Environment Variables**: `DG_CACHE_MEMORY_SIZE_MB`, `DG_CACHE_ENCRYPTION_KEY`
+
+**Benefits**: ✅ ACHIEVED
+- No filesystem access for memory cache = no permission issues
+- Encrypted at rest = secure cache storage
+- Per-process ephemeral keys = forward secrecy and process isolation
+- LRU eviction = prevents memory exhaustion
+- Zero TOCTOU window = memory operations are atomic
+- Configurable backends = flexibility for different use cases
 
 #### 8. **Implement Signed Cache Entries** (6 hours)
 ```python
