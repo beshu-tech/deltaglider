@@ -5,15 +5,17 @@ Real-world examples and patterns for using DeltaGlider in production application
 ## Table of Contents
 
 1. [Performance-Optimized Bucket Listing](#performance-optimized-bucket-listing)
-2. [Bucket Management](#bucket-management)
-3. [Software Release Management](#software-release-management)
-4. [Database Backup System](#database-backup-system)
-5. [CI/CD Pipeline Integration](#cicd-pipeline-integration)
-6. [Container Registry Storage](#container-registry-storage)
-7. [Machine Learning Model Versioning](#machine-learning-model-versioning)
-8. [Game Asset Distribution](#game-asset-distribution)
-9. [Log Archive Management](#log-archive-management)
-10. [Multi-Region Replication](#multi-region-replication)
+2. [Bucket Statistics and Monitoring](#bucket-statistics-and-monitoring)
+3. [Session-Level Cache Management](#session-level-cache-management)
+4. [Bucket Management](#bucket-management)
+5. [Software Release Management](#software-release-management)
+6. [Database Backup System](#database-backup-system)
+7. [CI/CD Pipeline Integration](#cicd-pipeline-integration)
+8. [Container Registry Storage](#container-registry-storage)
+9. [Machine Learning Model Versioning](#machine-learning-model-versioning)
+10. [Game Asset Distribution](#game-asset-distribution)
+11. [Log Archive Management](#log-archive-management)
+12. [Multi-Region Replication](#multi-region-replication)
 
 ## Performance-Optimized Bucket Listing
 
@@ -198,6 +200,322 @@ performance_comparison('releases')
 1. **Default to Fast Mode**: Always use `FetchMetadata=False` (default) unless you specifically need compression stats.
 
 2. **Never Fetch for Non-Deltas**: The SDK automatically skips metadata fetching for non-delta files even when `FetchMetadata=True`.
+
+## Bucket Statistics and Monitoring
+
+DeltaGlider provides powerful bucket statistics with session-level caching for performance.
+
+### Quick Dashboard Stats (Cached)
+
+```python
+from deltaglider import create_client
+
+client = create_client()
+
+def show_bucket_dashboard(bucket: str):
+    """Display real-time bucket statistics with caching."""
+
+    # First call: computes stats (~50ms)
+    stats = client.get_bucket_stats(bucket)
+
+    # Second call: instant (cached)
+    stats = client.get_bucket_stats(bucket)
+
+    print(f"Dashboard for {stats.bucket}")
+    print(f"=" * 60)
+    print(f"Total Objects:        {stats.object_count:,}")
+    print(f"  Delta Objects:      {stats.delta_objects:,}")
+    print(f"  Direct Objects:     {stats.direct_objects:,}")
+    print()
+    print(f"Original Size:        {stats.total_size / (1024**3):.2f} GB")
+    print(f"Stored Size:          {stats.compressed_size / (1024**3):.2f} GB")
+    print(f"Space Saved:          {stats.space_saved / (1024**3):.2f} GB")
+    print(f"Compression Ratio:    {stats.average_compression_ratio:.1%}")
+
+# Example: Show stats for multiple buckets (each cached separately)
+for bucket_name in ['releases', 'backups', 'archives']:
+    show_bucket_dashboard(bucket_name)
+```
+
+### Detailed Compression Analysis
+
+```python
+def detailed_compression_report(bucket: str):
+    """Generate detailed compression report with accurate ratios."""
+
+    # Detailed stats fetch metadata for delta files (slower, accurate)
+    stats = client.get_bucket_stats(bucket, detailed_stats=True)
+
+    efficiency = (stats.space_saved / stats.total_size * 100) if stats.total_size > 0 else 0
+
+    print(f"Detailed Compression Report: {stats.bucket}")
+    print(f"=" * 60)
+    print(f"Object Distribution:")
+    print(f"  Total:              {stats.object_count:,}")
+    print(f"  Delta-Compressed:   {stats.delta_objects:,} ({stats.delta_objects/stats.object_count*100:.1f}%)")
+    print(f"  Direct Storage:     {stats.direct_objects:,} ({stats.direct_objects/stats.object_count*100:.1f}%)")
+    print()
+    print(f"Storage Efficiency:")
+    print(f"  Original Data:      {stats.total_size / (1024**3):.2f} GB")
+    print(f"  Actual Storage:     {stats.compressed_size / (1024**3):.2f} GB")
+    print(f"  Space Saved:        {stats.space_saved / (1024**3):.2f} GB")
+    print(f"  Efficiency:         {efficiency:.1f}%")
+    print(f"  Avg Compression:    {stats.average_compression_ratio:.2%}")
+
+    # Calculate estimated monthly costs (example: $0.023/GB S3 Standard)
+    cost_without = stats.total_size / (1024**3) * 0.023
+    cost_with = stats.compressed_size / (1024**3) * 0.023
+    monthly_savings = cost_without - cost_with
+
+    print()
+    print(f"Estimated Monthly S3 Costs ($0.023/GB):")
+    print(f"  Without DeltaGlider: ${cost_without:.2f}")
+    print(f"  With DeltaGlider:    ${cost_with:.2f}")
+    print(f"  Monthly Savings:     ${monthly_savings:.2f}")
+
+# Example: Detailed report
+detailed_compression_report('releases')
+```
+
+### List Buckets with Cached Stats
+
+```python
+def list_buckets_with_stats():
+    """List all buckets and show cached statistics if available."""
+
+    # Pre-fetch stats for important buckets
+    important_buckets = ['releases', 'backups']
+    for bucket_name in important_buckets:
+        client.get_bucket_stats(bucket_name, detailed_stats=True)
+
+    # List all buckets (includes cached stats automatically)
+    response = client.list_buckets()
+
+    print("All Buckets:")
+    print(f"{'Name':<30} {'Objects':<10} {'Compression':<15} {'Cached'}")
+    print("=" * 70)
+
+    for bucket in response['Buckets']:
+        name = bucket['Name']
+
+        # Check if stats are cached
+        if 'DeltaGliderStats' in bucket:
+            stats = bucket['DeltaGliderStats']
+            obj_count = f"{stats['ObjectCount']:,}"
+            compression = f"{stats['AverageCompressionRatio']:.1%}"
+            cached = "✓ (detailed)" if stats['Detailed'] else "✓ (quick)"
+        else:
+            obj_count = "N/A"
+            compression = "N/A"
+            cached = "✗"
+
+        print(f"{name:<30} {obj_count:<10} {compression:<15} {cached}")
+
+# Example: List with stats
+list_buckets_with_stats()
+```
+
+### Monitoring Dashboard (Real-Time)
+
+```python
+import time
+
+def monitoring_dashboard(buckets: list[str], refresh_seconds: int = 60):
+    """Real-time monitoring dashboard with periodic refresh."""
+
+    while True:
+        print("\033[2J\033[H")  # Clear screen
+        print(f"DeltaGlider Monitoring Dashboard - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        for bucket_name in buckets:
+            # Get cached stats (instant) or compute fresh
+            stats = client.get_bucket_stats(bucket_name)
+
+            print(f"\n{bucket_name}:")
+            print(f"  Objects: {stats.object_count:,} | "
+                  f"Delta: {stats.delta_objects:,} | "
+                  f"Direct: {stats.direct_objects:,}")
+            print(f"  Size: {stats.compressed_size/(1024**3):.2f} GB | "
+                  f"Saved: {stats.space_saved/(1024**3):.2f} GB | "
+                  f"Compression: {stats.average_compression_ratio:.1%}")
+
+        print(f"\n{'=' * 80}")
+        print(f"Refreshing in {refresh_seconds} seconds... (Ctrl+C to exit)")
+
+        time.sleep(refresh_seconds)
+
+        # Clear cache for fresh data on next iteration
+        client.clear_cache()
+
+# Example: Monitor key buckets
+try:
+    monitoring_dashboard(['releases', 'backups', 'archives'], refresh_seconds=30)
+except KeyboardInterrupt:
+    print("\nMonitoring stopped.")
+```
+
+## Session-Level Cache Management
+
+DeltaGlider maintains session-level caches for optimal performance in long-running applications.
+
+### Long-Running Application Pattern
+
+```python
+from deltaglider import create_client
+import time
+
+def long_running_upload_service():
+    """Upload service with periodic cache cleanup."""
+
+    client = create_client()
+    processed_count = 0
+
+    while True:
+        # Simulate file processing
+        files_to_upload = get_pending_files()  # Your file queue
+
+        for file_path in files_to_upload:
+            try:
+                summary = client.upload(file_path, "s3://releases/")
+                processed_count += 1
+
+                print(f"Uploaded {file_path}: {summary.savings_percent:.0f}% saved")
+
+                # Periodic cache cleanup (every 100 files)
+                if processed_count % 100 == 0:
+                    client.clear_cache()
+                    print(f"Cache cleared after {processed_count} files")
+
+            except Exception as e:
+                print(f"Error uploading {file_path}: {e}")
+
+        time.sleep(60)  # Check for new files every minute
+
+# Example: Run upload service
+# long_running_upload_service()
+```
+
+### Cache Invalidation After External Changes
+
+```python
+def handle_external_bucket_changes(bucket: str):
+    """Refresh statistics after external tools modify bucket."""
+
+    # Get initial stats (cached)
+    stats_before = client.get_bucket_stats(bucket)
+    print(f"Before: {stats_before.object_count} objects")
+
+    # External process modifies bucket
+    print("External backup tool running...")
+    run_external_backup_tool(bucket)  # Your external tool
+
+    # Clear cache to get fresh data
+    client.clear_cache()
+
+    # Get updated stats
+    stats_after = client.get_bucket_stats(bucket)
+    print(f"After: {stats_after.object_count} objects")
+    print(f"Added: {stats_after.object_count - stats_before.object_count} objects")
+
+# Example usage
+handle_external_bucket_changes('backups')
+```
+
+### Selective Cache Eviction
+
+```python
+def selective_cache_management():
+    """Manage cache for specific delta spaces."""
+
+    client = create_client()
+
+    # Upload to multiple delta spaces
+    versions = ['v1.0.0', 'v1.1.0', 'v1.2.0']
+
+    for version in versions:
+        client.upload(f"app-{version}.zip", f"s3://releases/{version}/")
+
+    # Update reference for specific version
+    print("Updating v1.1.0 reference...")
+    client.upload("new-reference.zip", "s3://releases/v1.1.0/")
+
+    # Evict only v1.1.0 cache (others remain cached)
+    client.evict_cache("s3://releases/v1.1.0/reference.bin")
+
+    # Next upload to v1.1.0 fetches fresh reference
+    # v1.0.0 and v1.2.0 still use cached references
+    client.upload("similar-file.zip", "s3://releases/v1.1.0/")
+
+# Example: Selective eviction
+selective_cache_management()
+```
+
+### Testing with Clean Cache
+
+```python
+import pytest
+from deltaglider import create_client
+
+def test_upload_workflow():
+    """Test with clean cache state."""
+
+    client = create_client()
+    client.clear_cache()  # Start with clean state
+
+    # Test first upload (no reference exists)
+    summary1 = client.upload("file1.zip", "s3://test-bucket/prefix/")
+    assert not summary1.is_delta  # First file is reference
+
+    # Test subsequent upload (uses cached reference)
+    summary2 = client.upload("file2.zip", "s3://test-bucket/prefix/")
+    assert summary2.is_delta  # Should use delta
+
+    # Clear and test again
+    client.clear_cache()
+    summary3 = client.upload("file3.zip", "s3://test-bucket/prefix/")
+    assert summary3.is_delta  # Still delta (reference in S3)
+
+# Run test
+# test_upload_workflow()
+```
+
+### Cache Performance Monitoring
+
+```python
+import time
+
+def measure_cache_performance(bucket: str):
+    """Measure performance impact of caching."""
+
+    client = create_client()
+
+    # Test 1: Cold cache
+    client.clear_cache()
+    start = time.time()
+    stats1 = client.get_bucket_stats(bucket, detailed_stats=True)
+    cold_time = (time.time() - start) * 1000
+
+    # Test 2: Warm cache
+    start = time.time()
+    stats2 = client.get_bucket_stats(bucket, detailed_stats=True)
+    warm_time = (time.time() - start) * 1000
+
+    # Test 3: Quick stats from detailed cache
+    start = time.time()
+    stats3 = client.get_bucket_stats(bucket, detailed_stats=False)
+    reuse_time = (time.time() - start) * 1000
+
+    print(f"Cache Performance for {bucket}:")
+    print(f"  Cold Cache (detailed):     {cold_time:.0f}ms")
+    print(f"  Warm Cache (detailed):     {warm_time:.0f}ms")
+    print(f"  Cache Reuse (quick):       {reuse_time:.0f}ms")
+    print(f"  Speedup (detailed):        {cold_time/warm_time:.1f}x")
+    print(f"  Speedup (reuse):           {cold_time/reuse_time:.1f}x")
+
+# Example: Measure cache performance
+measure_cache_performance('releases')
+```
 
 3. **Use Pagination**: For large buckets, use `MaxKeys` and `ContinuationToken` to paginate results.
 

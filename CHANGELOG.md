@@ -177,6 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delta compression for versioned artifacts
 - 99%+ compression for similar files
 
+[5.1.0]: https://github.com/beshu-tech/deltaglider/compare/v5.0.3...v5.1.0
+[5.0.3]: https://github.com/beshu-tech/deltaglider/compare/v5.0.1...v5.0.3
 [5.0.1]: https://github.com/beshu-tech/deltaglider/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/beshu-tech/deltaglider/compare/v4.2.4...v5.0.0
 [4.2.4]: https://github.com/beshu-tech/deltaglider/compare/v4.2.3...v4.2.4
