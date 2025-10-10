@@ -181,12 +181,13 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 ## Environment Variables
 
 - `DG_LOG_LEVEL`: Logging level (default: "INFO")
-- `DG_CACHE_DIR`: Local reference cache directory (default: "/tmp/.deltaglider/reference_cache")
 - `DG_MAX_RATIO`: Maximum acceptable delta/file ratio (default: "0.5")
 - `AWS_ENDPOINT_URL`: Override S3 endpoint for MinIO/LocalStack
 - `AWS_ACCESS_KEY_ID`: AWS credentials
 - `AWS_SECRET_ACCESS_KEY`: AWS credentials
 - `AWS_DEFAULT_REGION`: AWS region
+
+**Note**: DeltaGlider uses ephemeral, process-isolated cache for security. Cache is automatically created in `/tmp/deltaglider-*` and cleaned up on exit.
 
 ## Important Implementation Details
 

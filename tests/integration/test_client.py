@@ -124,7 +124,7 @@ class MockStorage:
 @pytest.fixture
 def client(tmp_path):
     """Create a client with mocked storage."""
-    client = create_client(cache_dir=str(tmp_path / "cache"))
+    client = create_client()
 
     # Replace storage with mock
     mock_storage = MockStorage()
@@ -156,7 +156,6 @@ class TestCredentialHandling:
             aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
             aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
             region_name="us-west-2",
-            cache_dir=str(tmp_path / "cache"),
         )
 
         # Verify the client was created
@@ -179,7 +178,6 @@ class TestCredentialHandling:
             aws_access_key_id="ASIAIOSFODNN7EXAMPLE",
             aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
             aws_session_token="FwoGZXIvYXdzEBEaDH...",
-            cache_dir=str(tmp_path / "cache"),
         )
 
         assert client is not None
@@ -188,7 +186,7 @@ class TestCredentialHandling:
     def test_create_client_without_credentials_uses_environment(self, tmp_path):
         """Test that omitting credentials falls back to environment/IAM."""
         # This should use boto3's default credential chain
-        client = create_client(cache_dir=str(tmp_path / "cache"))
+        client = create_client()
 
         assert client is not None
         assert client.service.storage.client is not None
@@ -199,7 +197,6 @@ class TestCredentialHandling:
             endpoint_url="http://localhost:9000",
             aws_access_key_id="minioadmin",
             aws_secret_access_key="minioadmin",
-            cache_dir=str(tmp_path / "cache"),
         )
 
         assert client is not None

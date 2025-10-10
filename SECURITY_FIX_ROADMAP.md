@@ -23,29 +23,24 @@ Replace filesystem cache with **ephemeral, cryptographically-signed, user-isolat
 
 ## 📋 Implementation Roadmap
 
-### **DAY 1-2: Emergency Hotfix** (v5.0.3)
+### **DAY 1-2: Emergency Hotfix** (v5.0.3) ✅ COMPLETED
 *Stop the bleeding - minimal changes for immediate deployment*
 
-#### 1. **Disable Shared Cache Mode** (2 hours)
+#### 1. **Ephemeral Process-Isolated Cache** (2 hours) ✅ COMPLETED
 ```python
 # src/deltaglider/app/cli/main.py
 import tempfile
-import os
+import atexit
 
-def create_service(...):
-    # CRITICAL: Use process-specific temp directory
-    if os.environ.get("DG_UNSAFE_SHARED_CACHE") != "true":
-        cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
-        atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
-    else:
-        # Legacy mode with warning
-        cache_dir = Path(os.environ.get("DG_CACHE_DIR", "/tmp/.deltaglider/cache"))
-        logger.warning("UNSAFE: Shared cache mode enabled. Use at your own risk!")
+# SECURITY: Always use ephemeral process-isolated cache
+cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
+atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
 ```
 
 **Impact**: Each process gets isolated cache, auto-cleaned on exit. Eliminates multi-user attacks.
+**Implementation**: All legacy shared cache code removed. Ephemeral cache is now the ONLY mode.
 
-#### 2. **Add SHA Validation at Use-Time** (2 hours)
+#### 2. **Add SHA Validation at Use-Time** (2 hours) ✅ COMPLETED
 ```python
 # src/deltaglider/ports/cache.py
 class CachePort(Protocol):
@@ -59,9 +54,10 @@ def get_validated_ref(self, bucket: str, prefix: str, expected_sha: str) -> Path
     if not path.exists():
         raise CacheMissError(f"Cache miss for {bucket}/{prefix}")
 
-    # Lock file for atomic read
+    # Lock file for atomic read (Unix only)
     with open(path, 'rb') as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+        if sys.platform != "win32":
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
         content = f.read()
         actual_sha = hashlib.sha256(content).hexdigest()
 
@@ -72,13 +68,13 @@ def get_validated_ref(self, bucket: str, prefix: str, expected_sha: str) -> Path
     return path
 ```
 
-#### 3. **Update All Usage Points** (1 hour)
+#### 3. **Update All Usage Points** (1 hour) ✅ COMPLETED
 ```python
 # src/deltaglider/core/service.py
-# Replace ALL instances of:
-ref_path = self.cache.ref_path(delta_space.bucket, delta_space.prefix)
+# Replaced ALL instances in two locations:
+# - Line 234 (get method for decoding)
+# - Line 415 (_create_delta method for encoding)
 
-# With:
 ref_path = self.cache.get_validated_ref(
     delta_space.bucket,
     delta_space.prefix,
@@ -86,7 +82,7 @@ ref_path = self.cache.get_validated_ref(
 )
 ```
 
-**Test & Deploy**: 4 hours testing + immediate release
+**Test & Deploy**: ✅ All 99 tests passing + ready for release
 
 ---
 

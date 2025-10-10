@@ -21,7 +21,6 @@ Factory function to create a configured DeltaGlider client with sensible default
 def create_client(
     endpoint_url: Optional[str] = None,
     log_level: str = "INFO",
-    cache_dir: str = "/tmp/.deltaglider/cache",
     **kwargs
 ) -> DeltaGliderClient
 ```
@@ -30,10 +29,11 @@ def create_client(
 
 - **endpoint_url** (`Optional[str]`): S3 endpoint URL for MinIO, R2, or other S3-compatible storage. If None, uses AWS S3.
 - **log_level** (`str`): Logging verbosity level. Options: "DEBUG", "INFO", "WARNING", "ERROR". Default: "INFO".
-- **cache_dir** (`str`): Directory for local reference cache. Default: "/tmp/.deltaglider/cache".
 - **kwargs**: Additional arguments passed to `DeltaService`:
   - **tool_version** (`str`): Version string for metadata. Default: "deltaglider/0.1.0"
   - **max_ratio** (`float`): Maximum acceptable delta/file ratio. Default: 0.5
+
+**Security Note**: DeltaGlider automatically uses ephemeral, process-isolated cache (`/tmp/deltaglider-*`) that is cleaned up on exit. No configuration needed.
 
 #### Returns
 
@@ -48,11 +48,8 @@ client = create_client()
 # Custom endpoint for MinIO
 client = create_client(endpoint_url="http://localhost:9000")
 
-# Debug mode with custom cache
-client = create_client(
-    log_level="DEBUG",
-    cache_dir="/var/cache/deltaglider"
-)
+# Debug mode
+client = create_client(log_level="DEBUG")
 
 # Custom delta ratio threshold
 client = create_client(max_ratio=0.3)  # Only use delta if <30% of original
@@ -726,8 +723,9 @@ DeltaGlider respects these environment variables:
 ### DeltaGlider Configuration
 
 - **DG_LOG_LEVEL**: Logging level (DEBUG, INFO, WARNING, ERROR)
-- **DG_CACHE_DIR**: Local cache directory
 - **DG_MAX_RATIO**: Default maximum delta ratio
+
+**Note**: Cache is automatically managed (ephemeral, process-isolated) and requires no configuration.
 
 ### Example
 
@@ -739,10 +737,9 @@ export AWS_SECRET_ACCESS_KEY=minioadmin
 
 # Configure DeltaGlider
 export DG_LOG_LEVEL=DEBUG
-export DG_CACHE_DIR=/var/cache/deltaglider
 export DG_MAX_RATIO=0.3
 
-# Now use normally
+# Now use normally (cache managed automatically)
 python my_script.py
 ```
 

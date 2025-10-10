@@ -44,22 +44,10 @@ def create_service(
     max_ratio = float(os.environ.get("DG_MAX_RATIO", "0.5"))
     metrics_type = os.environ.get("DG_METRICS", "logging")  # Options: noop, logging, cloudwatch
 
-    # SECURITY: Use ephemeral cache by default to prevent multi-user attacks
-    if os.environ.get("DG_UNSAFE_SHARED_CACHE") != "true":
-        # Create process-specific temporary cache directory
-        cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
-        # Register cleanup handler to remove cache on exit
-        atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
-    else:
-        # Legacy shared cache mode - UNSAFE in multi-user environments
-        cache_dir = Path(os.environ.get("DG_CACHE_DIR", "/tmp/.deltaglider/reference_cache"))
-        # Create logger early to issue warning
-        temp_logger = StdLoggerAdapter(level=log_level)
-        temp_logger.warning(
-            "SECURITY WARNING: Shared cache mode enabled (DG_UNSAFE_SHARED_CACHE=true). "
-            "This mode has known security vulnerabilities in multi-user environments. "
-            "Use at your own risk!"
-        )
+    # SECURITY: Always use ephemeral process-isolated cache
+    cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
+    # Register cleanup handler to remove cache on exit
+    atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
 
     # Set AWS environment variables if provided
     if endpoint_url:

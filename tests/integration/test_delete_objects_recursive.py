@@ -71,7 +71,7 @@ def mock_storage():
 def client(tmp_path):
     """Create DeltaGliderClient with mock storage."""
     # Use create_client to get a properly configured client
-    client = create_client(cache_dir=str(tmp_path / "cache"))
+    client = create_client()
 
     # Replace storage with mock
     mock_storage = MockStorage()
