@@ -256,7 +256,7 @@ def get_bucket_stats(
             path = f"{deltaspace}/reference.bin" if deltaspace else "reference.bin"
             client.service.logger.warning(f"  - s3://{bucket}/{path} ({size:,} bytes)")
 
-        client.service.logger.warning(f"\nConsider removing these orphaned files:\n")
+        client.service.logger.warning("\nConsider removing these orphaned files:\n")
         for deltaspace in reference_files:
             path = f"{deltaspace}/reference.bin" if deltaspace else "reference.bin"
             client.service.logger.warning(f"  aws s3 rm s3://{bucket}/{path}")

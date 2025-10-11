@@ -1,10 +1,10 @@
 """Exhaustive tests for the bucket statistics algorithm."""
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
+
 from deltaglider.client_operations.stats import get_bucket_stats
-from deltaglider.client_models import BucketStats
-from deltaglider.core.models import ObjectHead
 
 
 class TestBucketStatsAlgorithm:
@@ -353,7 +353,7 @@ class TestBucketStatsAlgorithm:
             )
 
             with patch_as_completed:
-                stats = get_bucket_stats(mock_client, "parallel-bucket")
+                _ = get_bucket_stats(mock_client, "parallel-bucket")
 
         # Verify ThreadPoolExecutor was used with correct max_workers
         mock_executor.assert_called_once_with(max_workers=10)  # min(10, 50) = 10
@@ -371,7 +371,7 @@ class TestBucketStatsAlgorithm:
 
         # Test with detailed_stats=False (default)
         with patch("deltaglider.client_operations.stats.concurrent.futures"):
-            stats = get_bucket_stats(mock_client, "test-bucket", detailed_stats=False)
+            _ = get_bucket_stats(mock_client, "test-bucket", detailed_stats=False)
 
         # Should NOT fetch metadata
         mock_client.service.storage.head.assert_not_called()
@@ -383,7 +383,7 @@ class TestBucketStatsAlgorithm:
         mock_client.service.storage.head.return_value = Mock(metadata={"file_size": "19500000"})
 
         with patch("deltaglider.client_operations.stats.concurrent.futures"):
-            stats = get_bucket_stats(mock_client, "test-bucket", detailed_stats=True)
+            _ = get_bucket_stats(mock_client, "test-bucket", detailed_stats=True)
 
         # Should fetch metadata
         assert mock_client.service.storage.head.called
