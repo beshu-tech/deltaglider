@@ -329,9 +329,7 @@ class TestBucketStatsAlgorithm:
         mock_client.service.storage.head.side_effect = mock_head
 
         # Execute with mocked ThreadPoolExecutor
-        with patch(
-            "concurrent.futures.ThreadPoolExecutor"
-        ) as mock_executor:
+        with patch("concurrent.futures.ThreadPoolExecutor") as mock_executor:
             mock_pool = MagicMock()
             mock_executor.return_value.__enter__.return_value = mock_pool
 
