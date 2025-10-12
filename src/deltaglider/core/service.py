@@ -93,16 +93,27 @@ class DeltaService:
         return any(name_lower.endswith(ext) for ext in self.delta_extensions)
 
     def put(
-        self, local_file: Path, delta_space: DeltaSpace, max_ratio: float | None = None
+        self,
+        local_file: Path,
+        delta_space: DeltaSpace,
+        max_ratio: float | None = None,
+        override_name: str | None = None,
     ) -> PutSummary:
-        """Upload file as reference or delta (for archive files) or directly (for other files)."""
+        """Upload file as reference or delta (for archive files) or directly (for other files).
+
+        Args:
+            local_file: Path to the local file to upload
+            delta_space: DeltaSpace (bucket + prefix) for the upload
+            max_ratio: Maximum acceptable delta/file ratio (default: service max_ratio)
+            override_name: Optional name to use instead of local_file.name (useful for S3-to-S3 copies)
+        """
         if max_ratio is None:
             max_ratio = self.max_ratio
 
         start_time = self.clock.now()
         file_size = local_file.stat().st_size
         file_sha256 = self.hasher.sha256(local_file)
-        original_name = local_file.name
+        original_name = override_name if override_name else local_file.name
 
         self.logger.info(
             "Starting put operation",

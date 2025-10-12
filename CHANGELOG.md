@@ -16,11 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dry run mode with `--dry-run` flag
   - Include/exclude pattern filtering
   - Shows compression statistics after migration
+  - **FIXED**: Now correctly preserves original filenames during migration
 - **S3-to-S3 Recursive Copy**: `deltaglider cp -r s3://source/ s3://dest/` now supported
   - Automatically uses migration functionality with prefix preservation
   - Applies delta compression during transfer
+  - Preserves original filenames correctly
 - **Version Command**: Added `--version` flag to show deltaglider version
   - Usage: `deltaglider --version`
+- **DeltaService API Enhancement**: Added `override_name` parameter to `put()` method
+  - Allows specifying destination filename independently of source filesystem path
+  - Enables proper S3-to-S3 transfers without filesystem renaming tricks
+
+### Fixed
+- **Critical**: S3-to-S3 migration now preserves original filenames
+  - Previously created files with temp names like `tmp1b9cpdsn.zip`
+  - Now correctly uses original filenames from source S3 keys
+  - Fixed by adding `override_name` parameter to `DeltaService.put()`
 
 ### Changed
 - Recursive S3-to-S3 copy operations now preserve source prefix structure by default

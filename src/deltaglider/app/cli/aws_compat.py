@@ -1,5 +1,6 @@
 """AWS S3 CLI compatible commands."""
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -163,27 +164,67 @@ def copy_s3_to_s3(
     max_ratio: float | None = None,
     no_delta: bool = False,
 ) -> None:
-    """Copy object between S3 locations with optional delta compression."""
+    """Copy object between S3 locations with optional delta compression.
+
+    This performs a direct S3-to-S3 transfer using streaming to preserve
+    the original file content and apply delta compression at the destination.
+    """
     source_bucket, source_key = parse_s3_url(source_url)
     dest_bucket, dest_key = parse_s3_url(dest_url)
 
     if not quiet:
         click.echo(f"copy: 's3://{source_bucket}/{source_key}' to 's3://{dest_bucket}/{dest_key}'")
 
-    # Use temporary file
-    import tempfile
+    try:
+        # Get the source object as a stream
+        source_stream = service.storage.get(f"{source_bucket}/{source_key}")
 
-    with tempfile.NamedTemporaryFile(suffix=Path(source_key).suffix) as tmp:
-        tmp_path = Path(tmp.name)
+        # Determine the destination deltaspace
+        dest_key_parts = dest_key.split("/")
+        if len(dest_key_parts) > 1:
+            dest_prefix = "/".join(dest_key_parts[:-1])
+        else:
+            dest_prefix = ""
 
-        # Download from source
-        download_file(service, source_url, tmp_path, quiet=True)
+        dest_deltaspace = DeltaSpace(bucket=dest_bucket, prefix=dest_prefix)
 
-        # Upload to destination with optional delta compression
-        upload_file(service, tmp_path, dest_url, max_ratio, no_delta, quiet=True)
+        # If delta is disabled or max_ratio specified, use direct put
+        if no_delta:
+            # Direct storage put without delta compression
+            service.storage.put(f"{dest_bucket}/{dest_key}", source_stream, {})
+            if not quiet:
+                click.echo("Copy completed (no delta compression)")
+        else:
+            # Write to a temporary file and use override_name to preserve original filename
+            import tempfile
 
-        if not quiet:
-            click.echo("Copy completed")
+            # Extract original filename from source
+            original_filename = Path(source_key).name
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(source_key).suffix) as tmp:
+                tmp_path = Path(tmp.name)
+
+                # Write stream to temp file
+                with open(tmp_path, 'wb') as f:
+                    shutil.copyfileobj(source_stream, f)
+
+            try:
+                # Use DeltaService.put() with override_name to preserve original filename
+                summary = service.put(tmp_path, dest_deltaspace, max_ratio, override_name=original_filename)
+
+                if not quiet:
+                    if summary.delta_size:
+                        ratio = round((summary.delta_size / summary.file_size) * 100, 1)
+                        click.echo(f"Copy completed with delta compression ({ratio}% of original)")
+                    else:
+                        click.echo("Copy completed (stored as reference)")
+            finally:
+                # Clean up temp file
+                tmp_path.unlink(missing_ok=True)
+
+    except Exception as e:
+        click.echo(f"S3-to-S3 copy failed: {e}", err=True)
+        raise
 
 
 def migrate_s3_to_s3(
