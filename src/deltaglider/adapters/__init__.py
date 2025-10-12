@@ -6,20 +6,22 @@ from .cache_fs import FsCacheAdapter
 from .cache_memory import MemoryCache
 from .clock_utc import UtcClockAdapter
 from .diff_xdelta import XdeltaAdapter
+from .ec2_metadata import EC2MetadataAdapter
 from .hash_sha import Sha256Adapter
 from .logger_std import StdLoggerAdapter
 from .metrics_noop import NoopMetricsAdapter
 from .storage_s3 import S3StorageAdapter
 
 __all__ = [
-    "S3StorageAdapter",
-    "XdeltaAdapter",
-    "Sha256Adapter",
-    "FsCacheAdapter",
     "ContentAddressedCache",
+    "EC2MetadataAdapter",
     "EncryptedCache",
+    "FsCacheAdapter",
     "MemoryCache",
-    "UtcClockAdapter",
-    "StdLoggerAdapter",
     "NoopMetricsAdapter",
+    "S3StorageAdapter",
+    "Sha256Adapter",
+    "StdLoggerAdapter",
+    "UtcClockAdapter",
+    "XdeltaAdapter",
 ]

@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -50,7 +51,7 @@ def create_service(
     # Register cleanup handler to remove cache on exit
     atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
 
-    # Set AWS environment variables if provided
+    # Set AWS environment variables if provided (for compatibility with other AWS tools)
     if endpoint_url:
         os.environ["AWS_ENDPOINT_URL"] = endpoint_url
     if region:
@@ -58,9 +59,14 @@ def create_service(
     if profile:
         os.environ["AWS_PROFILE"] = profile
 
+    # Build boto3_kwargs for explicit parameter passing (preferred over env vars)
+    boto3_kwargs: dict[str, Any] = {}
+    if region:
+        boto3_kwargs["region_name"] = region
+
     # Create adapters
     hasher = Sha256Adapter()
-    storage = S3StorageAdapter(endpoint_url=endpoint_url)
+    storage = S3StorageAdapter(endpoint_url=endpoint_url, boto3_kwargs=boto3_kwargs)
     diff = XdeltaAdapter()
 
     # SECURITY: Configurable cache with encryption and backend selection
@@ -730,6 +736,7 @@ def migrate(
             dry_run=dry_run,
             skip_confirm=yes,
             preserve_prefix=not no_preserve_prefix,
+            region_override=region is not None,  # True if user explicitly specified --region
         )
 
     except Exception as e:

@@ -17,7 +17,85 @@ __all__ = [
     "copy_s3_to_s3",
     "migrate_s3_to_s3",
     "handle_recursive",
+    "log_aws_region",
 ]
+
+
+def log_aws_region(service: DeltaService, region_override: bool = False) -> None:
+    """Log the AWS region being used and warn about cross-region charges.
+
+    This function:
+    1. Detects if running on EC2
+    2. Compares EC2 region with S3 client region
+    3. Warns about potential cross-region data transfer charges
+    4. Helps users optimize for cost and performance
+
+    Args:
+        service: DeltaService instance with storage adapter
+        region_override: True if user explicitly specified --region flag
+    """
+    try:
+        from ...adapters.ec2_metadata import EC2MetadataAdapter
+        from ...adapters.storage_s3 import S3StorageAdapter
+
+        if not isinstance(service.storage, S3StorageAdapter):
+            return  # Not using S3 storage, skip
+
+        # Get S3 client region
+        s3_region = service.storage.client.meta.region_name
+        if not s3_region:
+            s3_region = "us-east-1"  # boto3 default
+
+        # Check if running on EC2
+        ec2_metadata = EC2MetadataAdapter()
+        if ec2_metadata.is_running_on_ec2():
+            ec2_region = ec2_metadata.get_region()
+            ec2_az = ec2_metadata.get_availability_zone()
+
+            # Log EC2 context
+            click.echo(f"EC2 Instance: {ec2_az or ec2_region or 'unknown'}")
+            click.echo(f"S3 Client Region: {s3_region}")
+
+            # Check for region mismatch
+            if ec2_region and ec2_region != s3_region:
+                if region_override:
+                    # User explicitly set --region, warn about costs
+                    click.echo("")
+                    click.secho(
+                        f"⚠️  WARNING: EC2 region={ec2_region} != S3 client region={s3_region}",
+                        fg="yellow",
+                        bold=True,
+                    )
+                    click.secho(
+                        f"    Expect cross-region/NAT data charges. Align regions (set client region={ec2_region})",
+                        fg="yellow",
+                    )
+                    click.secho(
+                        "    before proceeding. Or drop --region for automatic region resolution.",
+                        fg="yellow",
+                    )
+                    click.echo("")
+                else:
+                    # Auto-detected mismatch, but user can still cancel
+                    click.echo("")
+                    click.secho(
+                        f"ℹ️  INFO: EC2 region ({ec2_region}) differs from configured S3 region ({s3_region})",
+                        fg="cyan",
+                    )
+                    click.secho(
+                        f"    Consider using --region {ec2_region} to avoid cross-region charges.",
+                        fg="cyan",
+                    )
+                    click.echo("")
+            elif ec2_region and ec2_region == s3_region:
+                # Regions match - optimal configuration
+                click.secho("✓ Regions aligned - no cross-region charges", fg="green")
+        else:
+            # Not on EC2, just show S3 region
+            click.echo(f"S3 Client Region: {s3_region}")
+
+    except Exception:
+        pass  # Silently ignore errors getting region info
 
 
 def is_s3_path(path: str) -> bool:
@@ -239,6 +317,7 @@ def migrate_s3_to_s3(
     dry_run: bool = False,
     skip_confirm: bool = False,
     preserve_prefix: bool = True,
+    region_override: bool = False,
 ) -> None:
     """Migrate objects from one S3 location to another with delta compression.
 
@@ -247,6 +326,21 @@ def migrate_s3_to_s3(
     - Progress tracking: Shows migration progress
     - Confirmation prompt: Shows file count before starting
     - Prefix preservation: Optionally preserves source prefix structure in destination
+    - EC2 region detection: Warns about cross-region data transfer charges
+
+    Args:
+        service: DeltaService instance
+        source_url: Source S3 URL
+        dest_url: Destination S3 URL
+        exclude: Pattern to exclude files
+        include: Pattern to include files
+        quiet: Suppress output
+        no_delta: Disable delta compression
+        max_ratio: Maximum delta/file ratio
+        dry_run: Show what would be migrated without migrating
+        skip_confirm: Skip confirmation prompt
+        preserve_prefix: Preserve source prefix in destination
+        region_override: True if user explicitly specified --region flag
     """
     import fnmatch
 
@@ -269,6 +363,10 @@ def migrate_s3_to_s3(
             effective_dest_prefix = (dest_prefix or "") + source_prefix_name + "/"
 
     if not quiet:
+        # Log AWS region being used (helps users verify their configuration)
+        # Pass region_override to warn about cross-region charges if user explicitly set --region
+        log_aws_region(service, region_override=region_override)
+
         if preserve_prefix and source_prefix:
             click.echo(f"Migrating from s3://{source_bucket}/{source_prefix}")
             click.echo(f"           to s3://{dest_bucket}/{effective_dest_prefix}")
@@ -530,4 +628,5 @@ def handle_recursive(
             dry_run=False,
             skip_confirm=True,  # Don't prompt for cp command
             preserve_prefix=True,  # Always preserve prefix for cp -r
+            region_override=False,  # cp command doesn't track region override explicitly
         )

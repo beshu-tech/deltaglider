@@ -558,6 +558,12 @@ deltaglider migrate --exclude "*.log" s3://old/ s3://new/
 - **Resume Support**: Migration automatically skips files that already exist in the destination
 - **Progress Tracking**: Shows real-time migration progress and statistics
 - **Safety First**: Interactive confirmation shows file count before starting
+- **EC2 Cost Optimization**: Automatically detects EC2 instance region and warns about cross-region charges
+  - ✅ Green checkmark when regions align (no extra charges)
+  - ℹ️ INFO when auto-detected mismatch (suggests optimal region)
+  - ⚠️ WARNING when user explicitly set wrong `--region` (expect data transfer costs)
+  - Disable with `DG_DISABLE_EC2_DETECTION=true` if needed
+- **AWS Region Transparency**: Displays the actual AWS region being used
 - **Prefix Preservation**: By default, source prefix is preserved in destination (use `--no-preserve-prefix` to disable)
 - **S3-to-S3 Transfer**: Both regular S3 and DeltaGlider buckets supported
 

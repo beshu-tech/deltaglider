@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **EC2 Region Detection & Cost Optimization**
+  - Automatic detection of EC2 instance region using IMDSv2
+  - Warns when EC2 region ≠ S3 client region (potential cross-region charges)
+  - Different warnings for auto-detected vs. explicit `--region` flag mismatches
+  - Green checkmark when regions are aligned (optimal configuration)
+  - Can be disabled with `DG_DISABLE_EC2_DETECTION=true` environment variable
+  - Helps users optimize for cost and performance before migration starts
 - **New CLI Command**: `deltaglider migrate` for S3-to-S3 bucket migration with compression
   - Supports resume capability (skips already migrated files)
   - Real-time progress tracking with file count and statistics
@@ -16,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dry run mode with `--dry-run` flag
   - Include/exclude pattern filtering
   - Shows compression statistics after migration
+  - **EC2-aware region logging**: Detects EC2 instance and warns about cross-region charges
   - **FIXED**: Now correctly preserves original filenames during migration
 - **S3-to-S3 Recursive Copy**: `deltaglider cp -r s3://source/ s3://dest/` now supported
   - Automatically uses migration functionality with prefix preservation
@@ -32,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Previously created files with temp names like `tmp1b9cpdsn.zip`
   - Now correctly uses original filenames from source S3 keys
   - Fixed by adding `override_name` parameter to `DeltaService.put()`
+- **CLI Region Support**: `--region` flag now properly passes region to boto3 client
+  - Previously only set environment variable, relied on boto3 auto-detection
+  - Now explicitly passes `region_name` to `boto3.client()` via `boto3_kwargs`
+  - Ensures consistent behavior with `DeltaGliderClient` SDK
 
 ### Changed
 - Recursive S3-to-S3 copy operations now preserve source prefix structure by default
