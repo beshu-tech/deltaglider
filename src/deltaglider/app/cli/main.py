@@ -172,9 +172,6 @@ def cp(
 
         # Handle recursive operations for directories
         if recursive:
-            if operation == "copy":
-                click.echo("S3-to-S3 recursive copy not yet implemented", err=True)
-                sys.exit(1)
             handle_recursive(
                 service, source, dest, recursive, exclude, include, quiet, no_delta, max_ratio
             )
@@ -196,7 +193,7 @@ def cp(
             download_file(service, source, local_path, quiet)
 
         elif operation == "copy":
-            copy_s3_to_s3(service, source, dest, quiet)
+            copy_s3_to_s3(service, source, dest, quiet, max_ratio, no_delta)
 
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
@@ -637,6 +634,97 @@ def verify(service: DeltaService, s3_url: str) -> None:
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("source")
+@click.argument("dest")
+@click.option("--exclude", help="Exclude files matching pattern")
+@click.option("--include", help="Include only files matching pattern")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@click.option("--no-delta", is_flag=True, help="Disable delta compression")
+@click.option("--max-ratio", type=float, help="Max delta/file ratio (default: 0.5)")
+@click.option("--dry-run", is_flag=True, help="Show what would be migrated without migrating")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option("--no-preserve-prefix", is_flag=True, help="Don't preserve source prefix in destination")
+@click.option("--endpoint-url", help="Override S3 endpoint URL")
+@click.option("--region", help="AWS region")
+@click.option("--profile", help="AWS profile to use")
+@click.pass_obj
+def migrate(
+    service: DeltaService,
+    source: str,
+    dest: str,
+    exclude: str | None,
+    include: str | None,
+    quiet: bool,
+    no_delta: bool,
+    max_ratio: float | None,
+    dry_run: bool,
+    yes: bool,
+    no_preserve_prefix: bool,
+    endpoint_url: str | None,
+    region: str | None,
+    profile: str | None,
+) -> None:
+    """Migrate S3 bucket/prefix to DeltaGlider-compressed storage.
+
+    This command facilitates the migration of existing S3 objects to another bucket
+    with DeltaGlider compression. It supports:
+    - Resume capability: Only copies files that don't exist in destination
+    - Progress tracking: Shows migration progress
+    - Confirmation prompt: Shows file count before starting (use --yes to skip)
+    - Prefix preservation: By default, source prefix is preserved in destination
+
+    When migrating a prefix, the source prefix name is preserved by default:
+        s3://src/prefix1/ → s3://dest/      creates s3://dest/prefix1/
+        s3://src/a/b/c/  → s3://dest/x/    creates s3://dest/x/c/
+
+    Use --no-preserve-prefix to disable this behavior:
+        s3://src/prefix1/ → s3://dest/      creates s3://dest/ (files at root)
+
+    Examples:
+        deltaglider migrate s3://old-bucket/ s3://new-bucket/
+        deltaglider migrate s3://old-bucket/data/ s3://new-bucket/
+        deltaglider migrate --no-preserve-prefix s3://src/v1/ s3://dest/
+        deltaglider migrate --dry-run s3://old-bucket/ s3://new-bucket/
+        deltaglider migrate --yes --quiet s3://old-bucket/ s3://new-bucket/
+    """
+    from .aws_compat import is_s3_path, migrate_s3_to_s3
+
+    # Recreate service with AWS parameters if provided
+    if endpoint_url or region or profile:
+        service = create_service(
+            log_level=os.environ.get("DG_LOG_LEVEL", "INFO"),
+            endpoint_url=endpoint_url,
+            region=region,
+            profile=profile,
+        )
+
+    try:
+        # Validate both paths are S3
+        if not is_s3_path(source) or not is_s3_path(dest):
+            click.echo("Error: Both source and destination must be S3 paths", err=True)
+            sys.exit(1)
+
+        # Perform migration
+        migrate_s3_to_s3(
+            service,
+            source,
+            dest,
+            exclude=exclude,
+            include=include,
+            quiet=quiet,
+            no_delta=no_delta,
+            max_ratio=max_ratio,
+            dry_run=dry_run,
+            skip_confirm=yes,
+            preserve_prefix=not no_preserve_prefix,
+        )
+
+    except Exception as e:
+        click.echo(f"Migration failed: {e}", err=True)
         sys.exit(1)
 
 

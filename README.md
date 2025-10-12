@@ -116,6 +116,9 @@ deltaglider ls s3://releases/
 
 # Sync directories
 deltaglider sync ./dist/ s3://releases/v1.0.0/
+
+# Migrate existing S3 bucket to DeltaGlider-compressed storage
+deltaglider migrate s3://old-bucket/ s3://new-bucket/
 ```
 
 **That's it!** DeltaGlider automatically detects similar files and applies 99%+ compression. For more commands and options, see [CLI Reference](#cli-reference).
@@ -195,6 +198,12 @@ deltaglider stats s3://my-bucket                  # Also accepts s3:// format
 deltaglider stats s3://my-bucket/                 # With or without trailing slash
 deltaglider stats my-bucket --detailed            # Detailed compression metrics (slower)
 deltaglider stats my-bucket --json                # JSON output for automation
+
+# Migrate existing S3 buckets to DeltaGlider compression
+deltaglider migrate s3://old-bucket/ s3://new-bucket/         # Interactive migration
+deltaglider migrate s3://old-bucket/ s3://new-bucket/ --yes   # Skip confirmation
+deltaglider migrate --dry-run s3://old-bucket/ s3://new/      # Preview migration
+deltaglider migrate s3://bucket/v1/ s3://bucket/v2/           # Migrate prefixes
 
 # Works with MinIO, R2, and S3-compatible storage
 deltaglider cp file.zip s3://bucket/ --endpoint-url http://localhost:9000
@@ -518,6 +527,46 @@ Migrating from `aws s3` to `deltaglider` is as simple as changing the command na
 | `aws s3 ls s3://bucket/` | `deltaglider ls s3://bucket/` | - |
 | `aws s3 rm s3://bucket/file` | `deltaglider rm s3://bucket/file` | - |
 | `aws s3 sync dir/ s3://bucket/` | `deltaglider sync dir/ s3://bucket/` | ✅ 99% incremental |
+
+### Migrating Existing S3 Buckets
+
+DeltaGlider provides a dedicated `migrate` command to compress your existing S3 data:
+
+```bash
+# Migrate an entire bucket
+deltaglider migrate s3://old-bucket/ s3://compressed-bucket/
+
+# Migrate a prefix (preserves prefix structure by default)
+deltaglider migrate s3://bucket/releases/ s3://bucket/archive/
+# Result: s3://bucket/archive/releases/ contains the files
+
+# Migrate without preserving source prefix
+deltaglider migrate --no-preserve-prefix s3://bucket/v1/ s3://bucket/archive/
+# Result: Files go directly into s3://bucket/archive/
+
+# Preview migration (dry run)
+deltaglider migrate --dry-run s3://old/ s3://new/
+
+# Skip confirmation prompt
+deltaglider migrate --yes s3://old/ s3://new/
+
+# Exclude certain file patterns
+deltaglider migrate --exclude "*.log" s3://old/ s3://new/
+```
+
+**Key Features:**
+- **Resume Support**: Migration automatically skips files that already exist in the destination
+- **Progress Tracking**: Shows real-time migration progress and statistics
+- **Safety First**: Interactive confirmation shows file count before starting
+- **Prefix Preservation**: By default, source prefix is preserved in destination (use `--no-preserve-prefix` to disable)
+- **S3-to-S3 Transfer**: Both regular S3 and DeltaGlider buckets supported
+
+**Prefix Preservation Examples:**
+- `s3://src/data/` → `s3://dest/` creates `s3://dest/data/`
+- `s3://src/a/b/c/` → `s3://dest/x/` creates `s3://dest/x/c/`
+- Use `--no-preserve-prefix` to place files directly in destination without the source prefix
+
+The migration preserves all file names and structure while applying DeltaGlider's compression transparently.
 
 ## Production Ready
 
