@@ -9,6 +9,8 @@ DeltaGlider provides AWS S3 CLI compatible commands with automatic delta compres
 - `deltaglider ls [s3_url]` - List buckets and objects
 - `deltaglider rm <s3_url>` - Remove objects
 - `deltaglider sync <source> <destination>` - Synchronize directories
+- `deltaglider migrate <source> <destination>` - Migrate S3 buckets with compression and EC2 cost warnings
+- `deltaglider stats <bucket>` - Get bucket statistics and compression metrics
 - `deltaglider verify <s3_url>` - Verify file integrity
 
 ### Current Usage Examples

@@ -89,6 +89,7 @@ docker run -v /shared-cache:/tmp/.deltaglider \
 - `DG_CACHE_BACKEND`: Cache backend (default: `filesystem`, options: `filesystem`, `memory`)
 - `DG_CACHE_MEMORY_SIZE_MB`: Memory cache size in MB (default: `100`)
 - `DG_CACHE_ENCRYPTION_KEY`: Optional base64-encoded encryption key for cross-process cache sharing
+- `DG_DISABLE_EC2_DETECTION`: Disable EC2 instance detection (default: `false`, set to `true` to disable)
 - `AWS_ENDPOINT_URL`: S3 endpoint URL (default: AWS S3)
 - `AWS_ACCESS_KEY_ID`: AWS access key
 - `AWS_SECRET_ACCESS_KEY`: AWS secret key
@@ -578,6 +579,7 @@ The migration preserves all file names and structure while applying DeltaGlider'
 
 - ✅ **Battle tested**: 200K+ files in production
 - ✅ **Data integrity**: SHA256 verification on every operation
+- ✅ **Cost optimization**: Automatic EC2 region detection warns about cross-region charges - [📖 EC2 Detection Guide](docs/EC2_REGION_DETECTION.md)
 - ✅ **S3 compatible**: Works with AWS, MinIO, Cloudflare R2, etc.
 - ✅ **Atomic operations**: No partial states
 - ✅ **Concurrent safe**: Multiple clients supported

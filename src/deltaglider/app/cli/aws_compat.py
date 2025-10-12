@@ -283,12 +283,14 @@ def copy_s3_to_s3(
                 tmp_path = Path(tmp.name)
 
                 # Write stream to temp file
-                with open(tmp_path, 'wb') as f:
+                with open(tmp_path, "wb") as f:
                     shutil.copyfileobj(source_stream, f)
 
             try:
                 # Use DeltaService.put() with override_name to preserve original filename
-                summary = service.put(tmp_path, dest_deltaspace, max_ratio, override_name=original_filename)
+                summary = service.put(
+                    tmp_path, dest_deltaspace, max_ratio, override_name=original_filename
+                )
 
                 if not quiet:
                     if summary.delta_size:
@@ -371,7 +373,9 @@ def migrate_s3_to_s3(
             click.echo(f"Migrating from s3://{source_bucket}/{source_prefix}")
             click.echo(f"           to s3://{dest_bucket}/{effective_dest_prefix}")
         else:
-            click.echo(f"Migrating from s3://{source_bucket}/{source_prefix} to s3://{dest_bucket}/{dest_prefix}")
+            click.echo(
+                f"Migrating from s3://{source_bucket}/{source_prefix} to s3://{dest_bucket}/{dest_prefix}"
+            )
         click.echo("Scanning source and destination buckets...")
 
     # List source objects
@@ -396,7 +400,9 @@ def migrate_s3_to_s3(
         source_objects.append(obj)
 
     # List destination objects to detect what needs copying
-    dest_list_prefix = f"{dest_bucket}/{effective_dest_prefix}" if effective_dest_prefix else dest_bucket
+    dest_list_prefix = (
+        f"{dest_bucket}/{effective_dest_prefix}" if effective_dest_prefix else dest_bucket
+    )
     dest_keys = set()
 
     for obj in service.storage.list(dest_list_prefix):
@@ -429,6 +435,7 @@ def migrate_s3_to_s3(
         return
 
     if not quiet:
+
         def format_bytes(size: int) -> str:
             size_float = float(size)
             for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -487,7 +494,7 @@ def migrate_s3_to_s3(
                 dest_s3_url,
                 quiet=True,
                 max_ratio=max_ratio,
-                no_delta=no_delta
+                no_delta=no_delta,
             )
 
             successful += 1
@@ -517,10 +524,13 @@ def migrate_s3_to_s3(
         if successful > 0 and not no_delta:
             try:
                 from ...client import DeltaGliderClient
+
                 client = DeltaGliderClient(service)
                 dest_stats = client.get_bucket_stats(dest_bucket, detailed_stats=False)
                 if dest_stats.delta_objects > 0:
-                    click.echo(f"\nCompression achieved: {dest_stats.average_compression_ratio:.1%}")
+                    click.echo(
+                        f"\nCompression achieved: {dest_stats.average_compression_ratio:.1%}"
+                    )
                     click.echo(f"Space saved: {format_bytes(dest_stats.space_saved)}")
             except Exception:
                 pass  # Ignore stats errors

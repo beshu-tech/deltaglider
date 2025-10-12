@@ -129,7 +129,14 @@ def _version_callback(ctx: click.Context, param: click.Parameter, value: bool) -
 
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
-@click.option("--version", is_flag=True, is_eager=True, expose_value=False, callback=_version_callback, help="Show version and exit")
+@click.option(
+    "--version",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_version_callback,
+    help="Show version and exit",
+)
 @click.pass_context
 def cli(ctx: click.Context, debug: bool) -> None:
     """DeltaGlider - Delta-aware S3 file storage wrapper."""
@@ -662,7 +669,9 @@ def verify(service: DeltaService, s3_url: str) -> None:
 @click.option("--max-ratio", type=float, help="Max delta/file ratio (default: 0.5)")
 @click.option("--dry-run", is_flag=True, help="Show what would be migrated without migrating")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
-@click.option("--no-preserve-prefix", is_flag=True, help="Don't preserve source prefix in destination")
+@click.option(
+    "--no-preserve-prefix", is_flag=True, help="Don't preserve source prefix in destination"
+)
 @click.option("--endpoint-url", help="Override S3 endpoint URL")
 @click.option("--region", help="AWS region")
 @click.option("--profile", help="AWS profile to use")

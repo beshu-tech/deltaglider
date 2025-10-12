@@ -1,7 +1,5 @@
 """Test S3-to-S3 migration functionality."""
 
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -68,21 +66,21 @@ def test_migrate_s3_to_s3_with_resume(mock_service):
     mock_service.storage.list.side_effect = list_side_effect
 
     # Mock the copy operation and click functions
+    # Use quiet=True to skip EC2 detection logging
     with patch("deltaglider.app.cli.aws_compat.copy_s3_to_s3") as mock_copy:
-        with patch("deltaglider.app.cli.aws_compat.click.echo") as mock_echo:
-            with patch("deltaglider.app.cli.aws_compat.click.confirm", return_value=True):
-                migrate_s3_to_s3(
-                    mock_service,
-                    "s3://source-bucket/",
-                    "s3://dest-bucket/",
-                    exclude=None,
-                    include=None,
-                    quiet=False,
-                    no_delta=False,
-                    max_ratio=None,
-                    dry_run=False,
-                    skip_confirm=False,
-                )
+        with patch("deltaglider.app.cli.aws_compat.click.confirm", return_value=True):
+            migrate_s3_to_s3(
+                mock_service,
+                "s3://source-bucket/",
+                "s3://dest-bucket/",
+                exclude=None,
+                include=None,
+                quiet=True,  # Skip EC2 detection and logging
+                no_delta=False,
+                max_ratio=None,
+                dry_run=False,
+                skip_confirm=False,
+            )
 
     # Should copy only file2.zip and subdir/file3.zip (file1 already exists)
     assert mock_copy.call_count == 2
@@ -92,7 +90,10 @@ def test_migrate_s3_to_s3_with_resume(mock_service):
     migrated_files = [(args[1], args[2]) for args in call_args]
 
     assert ("s3://source-bucket/file2.zip", "s3://dest-bucket/file2.zip") in migrated_files
-    assert ("s3://source-bucket/subdir/file3.zip", "s3://dest-bucket/subdir/file3.zip") in migrated_files
+    assert (
+        "s3://source-bucket/subdir/file3.zip",
+        "s3://dest-bucket/subdir/file3.zip",
+    ) in migrated_files
 
 
 def test_migrate_s3_to_s3_dry_run(mock_service):
@@ -118,7 +119,7 @@ def test_migrate_s3_to_s3_dry_run(mock_service):
                 "s3://dest-bucket/",
                 exclude=None,
                 include=None,
-                quiet=False,
+                quiet=True,  # Skip EC2 detection
                 no_delta=False,
                 max_ratio=None,
                 dry_run=True,
@@ -172,7 +173,7 @@ def test_migrate_s3_to_s3_with_filters(mock_service):
                     "s3://dest-bucket/",
                     exclude="*.log",
                     include=None,
-                    quiet=False,
+                    quiet=True,  # Skip EC2 detection
                     no_delta=False,
                     max_ratio=None,
                     dry_run=False,
@@ -213,7 +214,7 @@ def test_migrate_s3_to_s3_skip_confirm(mock_service):
                     "s3://dest-bucket/",
                     exclude=None,
                     include=None,
-                    quiet=False,
+                    quiet=True,  # Skip EC2 detection
                     no_delta=False,
                     max_ratio=None,
                     dry_run=False,
@@ -255,7 +256,7 @@ def test_migrate_s3_to_s3_with_prefix(mock_service):
                     "s3://dest-bucket/archive/",
                     exclude=None,
                     include=None,
-                    quiet=False,
+                    quiet=True,  # Skip EC2 detection
                     no_delta=False,
                     max_ratio=None,
                     dry_run=False,
