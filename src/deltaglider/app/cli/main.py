@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from ... import __version__
 from ...adapters import (
     NoopMetricsAdapter,
     S3StorageAdapter,
@@ -113,8 +114,16 @@ def create_service(
     )
 
 
+def _version_callback(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    """Callback for --version option."""
+    if value:
+        click.echo(f"deltaglider {__version__}")
+        ctx.exit(0)
+
+
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
+@click.option("--version", is_flag=True, is_eager=True, expose_value=False, callback=_version_callback, help="Show version and exit")
 @click.pass_context
 def cli(ctx: click.Context, debug: bool) -> None:
     """DeltaGlider - Delta-aware S3 file storage wrapper."""
