@@ -110,21 +110,22 @@ def test_migrate_s3_to_s3_dry_run(mock_service):
 
     mock_service.storage.list.return_value = iter(source_objects)
 
-    # Mock the copy operation
+    # Mock the copy operation and EC2 detection
     with patch("deltaglider.app.cli.aws_compat.copy_s3_to_s3") as mock_copy:
         with patch("deltaglider.app.cli.aws_compat.click.echo") as mock_echo:
-            migrate_s3_to_s3(
-                mock_service,
-                "s3://source-bucket/",
-                "s3://dest-bucket/",
-                exclude=None,
-                include=None,
-                quiet=True,  # Skip EC2 detection
-                no_delta=False,
-                max_ratio=None,
-                dry_run=True,
-                skip_confirm=False,
-            )
+            with patch("deltaglider.app.cli.aws_compat.log_aws_region"):
+                migrate_s3_to_s3(
+                    mock_service,
+                    "s3://source-bucket/",
+                    "s3://dest-bucket/",
+                    exclude=None,
+                    include=None,
+                    quiet=False,  # Allow output to test dry run messages
+                    no_delta=False,
+                    max_ratio=None,
+                    dry_run=True,
+                    skip_confirm=False,
+                )
 
     # Should not actually copy anything in dry run mode
     mock_copy.assert_not_called()

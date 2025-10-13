@@ -318,7 +318,7 @@ def migrate_s3_to_s3(
     max_ratio: float | None = None,
     dry_run: bool = False,
     skip_confirm: bool = False,
-    preserve_prefix: bool = True,
+    preserve_prefix: bool = False,
     region_override: bool = False,
 ) -> None:
     """Migrate objects from one S3 location to another with delta compression.
@@ -450,19 +450,22 @@ def migrate_s3_to_s3(
         if len(dest_keys) > 0:
             click.echo(f"Already migrated: {len(dest_keys)} files (will be skipped)")
 
-        if dry_run:
+    # Handle dry run mode early (before confirmation prompt)
+    if dry_run:
+        if not quiet:
             click.echo("\n--- DRY RUN MODE ---")
             for _obj, rel_key in files_to_migrate[:10]:  # Show first 10 files
                 click.echo(f"  Would migrate: {rel_key}")
             if len(files_to_migrate) > 10:
                 click.echo(f"  ... and {len(files_to_migrate) - 10} more files")
-            return
+        return
 
-        if not skip_confirm:
-            click.echo("")
-            if not click.confirm("Do you want to proceed with the migration?"):
-                click.echo("Migration cancelled.")
-                return
+    # Ask for confirmation before proceeding with actual migration
+    if not quiet and not skip_confirm:
+        click.echo("")
+        if not click.confirm("Do you want to proceed with the migration?"):
+            click.echo("Migration cancelled.")
+            return
 
     # Perform migration
     if not quiet:
