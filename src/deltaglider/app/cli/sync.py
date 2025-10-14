@@ -5,7 +5,25 @@ from pathlib import Path
 import click
 
 from ...core import DeltaService
+from ...core.object_listing import list_all_objects, object_dict_to_head
 from ...ports import ObjectHead
+
+
+def fetch_s3_object_heads(service: DeltaService, bucket: str, prefix: str) -> list[ObjectHead]:
+    """Retrieve all objects for a prefix, falling back to iterator when needed."""
+    try:
+        listing = list_all_objects(
+            service.storage,
+            bucket=bucket,
+            prefix=prefix,
+            max_keys=1000,
+            logger=getattr(service, "logger", None),
+        )
+    except (RuntimeError, NotImplementedError):
+        list_prefix = f"{bucket}/{prefix}" if prefix else bucket
+        return list(service.storage.list(list_prefix))
+
+    return [object_dict_to_head(obj) for obj in listing.objects]
 
 
 def get_local_files(
@@ -42,8 +60,7 @@ def get_s3_files(
     import fnmatch
 
     files = {}
-    list_prefix = f"{bucket}/{prefix}" if prefix else bucket
-    objects = service.storage.list(list_prefix)
+    objects = fetch_s3_object_heads(service, bucket, prefix)
 
     for obj in objects:
         # Skip reference.bin files (internal)

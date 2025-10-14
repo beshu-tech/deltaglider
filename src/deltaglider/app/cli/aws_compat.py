@@ -6,7 +6,15 @@ from pathlib import Path
 
 import click
 
-from ...core import DeltaService, DeltaSpace, ObjectKey
+from ...core import (
+    DeltaService,
+    DeltaSpace,
+    ObjectKey,
+    build_s3_url,
+    is_s3_url,
+)
+from ...core import parse_s3_url as core_parse_s3_url
+from .sync import fetch_s3_object_heads
 
 __all__ = [
     "is_s3_path",
@@ -100,19 +108,13 @@ def log_aws_region(service: DeltaService, region_override: bool = False) -> None
 
 def is_s3_path(path: str) -> bool:
     """Check if path is an S3 URL."""
-    return path.startswith("s3://")
+    return is_s3_url(path)
 
 
 def parse_s3_url(url: str) -> tuple[str, str]:
     """Parse S3 URL into bucket and key."""
-    if not url.startswith("s3://"):
-        raise ValueError(f"Invalid S3 URL: {url}")
-
-    s3_path = url[5:].rstrip("/")
-    parts = s3_path.split("/", 1)
-    bucket = parts[0]
-    key = parts[1] if len(parts) > 1 else ""
-    return bucket, key
+    parsed = core_parse_s3_url(url, strip_trailing_slash=True)
+    return parsed.bucket, parsed.key
 
 
 def determine_operation(source: str, dest: str) -> str:
@@ -147,6 +149,8 @@ def upload_file(
 
     delta_space = DeltaSpace(bucket=bucket, prefix="/".join(key.split("/")[:-1]))
 
+    dest_url = build_s3_url(bucket, key)
+
     try:
         # Check if delta should be disabled
         if no_delta:
@@ -156,7 +160,7 @@ def upload_file(
 
             if not quiet:
                 file_size = local_path.stat().st_size
-                click.echo(f"upload: '{local_path}' to 's3://{bucket}/{key}' ({file_size} bytes)")
+                click.echo(f"upload: '{local_path}' to '{dest_url}' ({file_size} bytes)")
         else:
             # Use delta compression
             summary = service.put(local_path, delta_space, max_ratio)
@@ -165,12 +169,12 @@ def upload_file(
                 if summary.delta_size:
                     ratio = round((summary.delta_size / summary.file_size) * 100, 1)
                     click.echo(
-                        f"upload: '{local_path}' to 's3://{bucket}/{summary.key}' "
+                        f"upload: '{local_path}' to '{build_s3_url(bucket, summary.key)}' "
                         f"(delta: {ratio}% of original)"
                     )
                 else:
                     click.echo(
-                        f"upload: '{local_path}' to 's3://{bucket}/{summary.key}' "
+                        f"upload: '{local_path}' to '{build_s3_url(bucket, summary.key)}' "
                         f"(reference: {summary.file_size} bytes)"
                     )
 
@@ -202,7 +206,7 @@ def download_file(
                 actual_key = delta_key
                 obj_key = ObjectKey(bucket=bucket, key=delta_key)
                 if not quiet:
-                    click.echo(f"Auto-detected delta: s3://{bucket}/{delta_key}")
+                    click.echo(f"Auto-detected delta: {build_s3_url(bucket, delta_key)}")
 
         # Determine output path
         if local_path is None:
@@ -226,7 +230,7 @@ def download_file(
         if not quiet:
             file_size = local_path.stat().st_size
             click.echo(
-                f"download: 's3://{bucket}/{actual_key}' to '{local_path}' ({file_size} bytes)"
+                f"download: '{build_s3_url(bucket, actual_key)}' to '{local_path}' ({file_size} bytes)"
             )
 
     except Exception as e:
@@ -251,7 +255,10 @@ def copy_s3_to_s3(
     dest_bucket, dest_key = parse_s3_url(dest_url)
 
     if not quiet:
-        click.echo(f"copy: 's3://{source_bucket}/{source_key}' to 's3://{dest_bucket}/{dest_key}'")
+        click.echo(
+            f"copy: '{build_s3_url(source_bucket, source_key)}' "
+            f"to '{build_s3_url(dest_bucket, dest_key)}'"
+        )
 
     try:
         # Get the source object as a stream
@@ -369,13 +376,15 @@ def migrate_s3_to_s3(
         # Pass region_override to warn about cross-region charges if user explicitly set --region
         log_aws_region(service, region_override=region_override)
 
+        source_display = build_s3_url(source_bucket, source_prefix)
+        dest_display = build_s3_url(dest_bucket, dest_prefix)
+        effective_dest_display = build_s3_url(dest_bucket, effective_dest_prefix)
+
         if preserve_prefix and source_prefix:
-            click.echo(f"Migrating from s3://{source_bucket}/{source_prefix}")
-            click.echo(f"           to s3://{dest_bucket}/{effective_dest_prefix}")
+            click.echo(f"Migrating from {source_display}")
+            click.echo(f"           to {effective_dest_display}")
         else:
-            click.echo(
-                f"Migrating from s3://{source_bucket}/{source_prefix} to s3://{dest_bucket}/{dest_prefix}"
-            )
+            click.echo(f"Migrating from {source_display} to {dest_display}")
         click.echo("Scanning source and destination buckets...")
 
     # List source objects
@@ -476,14 +485,14 @@ def migrate_s3_to_s3(
     failed_files = []
 
     for i, (source_obj, rel_key) in enumerate(files_to_migrate, 1):
-        source_s3_url = f"s3://{source_bucket}/{source_obj.key}"
+        source_s3_url = build_s3_url(source_bucket, source_obj.key)
 
         # Construct destination URL using effective prefix
         if effective_dest_prefix:
             dest_key = effective_dest_prefix + rel_key
         else:
             dest_key = rel_key
-        dest_s3_url = f"s3://{dest_bucket}/{dest_key}"
+        dest_s3_url = build_s3_url(dest_bucket, dest_key)
 
         try:
             if not quiet:
@@ -530,7 +539,7 @@ def migrate_s3_to_s3(
 
                 client = DeltaGliderClient(service)
                 # Use cached stats only - don't scan bucket (prevents blocking)
-                cached_stats = client._get_cached_bucket_stats(dest_bucket, detailed_stats=False)
+                cached_stats = client._get_cached_bucket_stats(dest_bucket, "quick")
                 if cached_stats and cached_stats.delta_objects > 0:
                     click.echo(
                         f"\nCompression achieved: {cached_stats.average_compression_ratio:.1%}"
@@ -592,10 +601,7 @@ def handle_recursive(
         dest_path = Path(dest)
         dest_path.mkdir(parents=True, exist_ok=True)
 
-        # List all objects with prefix
-        # Note: S3StorageAdapter.list() expects "bucket/prefix" format
-        list_prefix = f"{bucket}/{prefix}" if prefix else bucket
-        objects = list(service.storage.list(list_prefix))
+        objects = fetch_s3_object_heads(service, bucket, prefix)
 
         if not quiet:
             click.echo(f"Downloading {len(objects)} files...")
@@ -625,7 +631,7 @@ def handle_recursive(
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Download file
-            s3_url = f"s3://{bucket}/{obj.key}"
+            s3_url = build_s3_url(bucket, obj.key)
             download_file(service, s3_url, local_path, quiet)
 
     elif operation == "copy":

@@ -153,13 +153,14 @@ class TestBucketManagement:
             delta_objects=6,
             direct_objects=4,
         )
-        client._store_bucket_stats_cache("bucket1", detailed_stats=True, stats=cached_stats)
+        client._store_bucket_stats_cache("bucket1", mode="detailed", stats=cached_stats)
 
         response = client.list_buckets()
 
         bucket1 = next(bucket for bucket in response["Buckets"] if bucket["Name"] == "bucket1")
         assert bucket1["DeltaGliderStats"]["Cached"] is True
         assert bucket1["DeltaGliderStats"]["Detailed"] is True
+        assert bucket1["DeltaGliderStats"]["Mode"] == "detailed"
         assert bucket1["DeltaGliderStats"]["ObjectCount"] == cached_stats.object_count
         assert bucket1["DeltaGliderStats"]["TotalSize"] == cached_stats.total_size
 
@@ -254,10 +255,14 @@ class TestBucketManagement:
 
         call_count = {"value": 0}
 
-        def fake_get_bucket_stats(_: Any, bucket: str, detailed_stats_flag: bool) -> BucketStats:
+        def fake_get_bucket_stats(_: Any, bucket: str, mode: str) -> BucketStats:
             call_count["value"] += 1
             assert bucket == "bucket1"
-            return detailed_stats if detailed_stats_flag else quick_stats
+            if mode == "detailed":
+                return detailed_stats
+            if mode == "sampled":
+                return detailed_stats  # sampled treated as detailed for cache propagation
+            return quick_stats
 
         monkeypatch.setattr("deltaglider.client._get_bucket_stats", fake_get_bucket_stats)
 
@@ -271,7 +276,7 @@ class TestBucketManagement:
         assert call_count["value"] == 1
 
         # Detailed call triggers new computation
-        result_detailed = client.get_bucket_stats("bucket1", detailed_stats=True)
+        result_detailed = client.get_bucket_stats("bucket1", mode="detailed")
         assert result_detailed is detailed_stats
         assert call_count["value"] == 2
 

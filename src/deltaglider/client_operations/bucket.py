@@ -145,11 +145,12 @@ def list_buckets(
                 bucket_data = dict(bucket_entry)
                 name = bucket_data.get("Name")
                 if isinstance(name, str) and name:
-                    cached_stats, detailed = client._get_cached_bucket_stats_for_listing(name)
-                    if cached_stats is not None:
+                    cached_stats, cached_mode = client._get_cached_bucket_stats_for_listing(name)
+                    if cached_stats is not None and cached_mode is not None:
                         bucket_data["DeltaGliderStats"] = {
                             "Cached": True,
-                            "Detailed": detailed,
+                            "Mode": cached_mode,
+                            "Detailed": cached_mode == "detailed",
                             "ObjectCount": cached_stats.object_count,
                             "TotalSize": cached_stats.total_size,
                             "CompressedSize": cached_stats.compressed_size,

@@ -49,9 +49,7 @@ class TestStatsCommand:
             assert output["direct_objects"] == 3
 
             # Verify client was called correctly
-            mock_client.get_bucket_stats.assert_called_once_with(
-                "test-bucket", detailed_stats=False
-            )
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
 
     def test_stats_json_output_detailed(self):
         """Test stats command with detailed JSON output."""
@@ -79,7 +77,44 @@ class TestStatsCommand:
             assert output["average_compression_ratio"] == 0.95
 
             # Verify detailed flag was passed
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", detailed_stats=True)
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="detailed")
+
+    def test_stats_json_output_sampled(self):
+        """Test stats command with sampled JSON output."""
+        mock_stats = BucketStats(
+            bucket="test-bucket",
+            object_count=5,
+            total_size=2000000,
+            compressed_size=100000,
+            space_saved=1900000,
+            average_compression_ratio=0.95,
+            delta_objects=5,
+            direct_objects=0,
+        )
+
+        with patch("deltaglider.client.DeltaGliderClient") as mock_client_class:
+            mock_client = Mock()
+            mock_client.get_bucket_stats.return_value = mock_stats
+            mock_client_class.return_value = mock_client
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ["stats", "test-bucket", "--sampled", "--json"])
+
+            assert result.exit_code == 0
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="sampled")
+
+    def test_stats_sampled_and_detailed_conflict(self):
+        """--sampled and --detailed flags must be mutually exclusive."""
+
+        with patch("deltaglider.client.DeltaGliderClient") as mock_client_class:
+            mock_client = Mock()
+            mock_client_class.return_value = mock_client
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ["stats", "test-bucket", "--sampled", "--detailed"])
+
+            assert result.exit_code == 1
+            assert "cannot be used together" in result.output
 
     def test_stats_human_readable_output(self):
         """Test stats command with human-readable output."""
@@ -155,9 +190,7 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify bucket name was parsed correctly from S3 URL
-            mock_client.get_bucket_stats.assert_called_once_with(
-                "test-bucket", detailed_stats=False
-            )
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
 
     def test_stats_with_s3_url_trailing_slash(self):
         """Test stats command with s3:// URL format with trailing slash."""
@@ -182,9 +215,7 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify bucket name was parsed correctly from S3 URL with trailing slash
-            mock_client.get_bucket_stats.assert_called_once_with(
-                "test-bucket", detailed_stats=False
-            )
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
 
     def test_stats_with_s3_url_with_prefix(self):
         """Test stats command with s3:// URL format with prefix (should ignore prefix)."""
@@ -209,6 +240,4 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify only bucket name was extracted, prefix ignored
-            mock_client.get_bucket_stats.assert_called_once_with(
-                "test-bucket", detailed_stats=False
-            )
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")

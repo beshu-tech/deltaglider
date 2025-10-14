@@ -1,5 +1,10 @@
 """Core domain for DeltaGlider."""
 
+from .delta_extensions import (
+    DEFAULT_COMPOUND_DELTA_EXTENSIONS,
+    DEFAULT_DELTA_EXTENSIONS,
+    is_delta_candidate,
+)
 from .errors import (
     DeltaGliderError,
     DiffDecodeError,
@@ -19,6 +24,7 @@ from .models import (
     Sha256,
     VerifyResult,
 )
+from .s3_uri import S3Url, build_s3_url, is_s3_url, parse_s3_url
 from .service import DeltaService
 
 __all__ = [
@@ -38,4 +44,11 @@ __all__ = [
     "PutSummary",
     "VerifyResult",
     "DeltaService",
+    "DEFAULT_DELTA_EXTENSIONS",
+    "DEFAULT_COMPOUND_DELTA_EXTENSIONS",
+    "is_delta_candidate",
+    "S3Url",
+    "build_s3_url",
+    "is_s3_url",
+    "parse_s3_url",
 ]

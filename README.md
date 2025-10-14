@@ -193,11 +193,14 @@ deltaglider sync s3://releases/ ./local-backup/   # Sync from S3
 deltaglider sync --delete ./src/ s3://backup/     # Mirror exactly
 deltaglider sync --exclude "*.log" ./src/ s3://backup/  # Exclude patterns
 
-# Get bucket statistics (compression metrics)
-deltaglider stats my-bucket                       # Quick stats overview
+# Get bucket statistics with intelligent S3-based caching
+deltaglider stats my-bucket                       # Quick stats (~100ms with cache)
 deltaglider stats s3://my-bucket                  # Also accepts s3:// format
 deltaglider stats s3://my-bucket/                 # With or without trailing slash
-deltaglider stats my-bucket --detailed            # Detailed compression metrics (slower)
+deltaglider stats my-bucket --sampled             # Balanced (one sample per deltaspace)
+deltaglider stats my-bucket --detailed            # Most accurate (slower, all metadata)
+deltaglider stats my-bucket --refresh             # Force cache refresh
+deltaglider stats my-bucket --no-cache            # Skip caching entirely
 deltaglider stats my-bucket --json                # JSON output for automation
 
 # Migrate existing S3 buckets to DeltaGlider compression

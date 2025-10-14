@@ -57,9 +57,10 @@ while response.get('IsTruncated'):
 # Get detailed compression stats only when needed
 response = client.list_objects(Bucket='releases', FetchMetadata=True)  # Slower but detailed
 
-# Quick bucket statistics
-stats = client.get_bucket_stats('releases')  # Fast overview
-stats = client.get_bucket_stats('releases', detailed_stats=True)  # With compression metrics
+# Bucket statistics with intelligent S3-based caching (NEW!)
+stats = client.get_bucket_stats('releases')  # Fast (~100ms with cache)
+stats = client.get_bucket_stats('releases', mode='detailed')  # Accurate compression metrics
+stats = client.get_bucket_stats('releases', refresh_cache=True)  # Force fresh computation
 
 client.delete_object(Bucket='releases', Key='old-version.zip')
 ```

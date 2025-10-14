@@ -434,7 +434,7 @@ class TestDeltaGliderFeatures:
 
     def test_get_bucket_stats(self, client):
         """Test getting bucket statistics."""
-        # Test quick stats (default: detailed_stats=False)
+        # Test quick stats (LIST only)
         stats = client.get_bucket_stats("test-bucket")
 
         assert isinstance(stats, BucketStats)
@@ -442,8 +442,8 @@ class TestDeltaGliderFeatures:
         assert stats.total_size > 0
         assert stats.delta_objects >= 1  # We have archive.zip.delta
 
-        # Test with detailed_stats=True
-        detailed_stats = client.get_bucket_stats("test-bucket", detailed_stats=True)
+        # Test with detailed mode
+        detailed_stats = client.get_bucket_stats("test-bucket", mode="detailed")
         assert isinstance(detailed_stats, BucketStats)
         assert detailed_stats.object_count == stats.object_count
 

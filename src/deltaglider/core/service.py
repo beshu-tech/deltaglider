@@ -15,6 +15,11 @@ from ..ports import (
     StoragePort,
 )
 from ..ports.storage import ObjectHead
+from .delta_extensions import (
+    DEFAULT_COMPOUND_DELTA_EXTENSIONS,
+    DEFAULT_DELTA_EXTENSIONS,
+    is_delta_candidate,
+)
 from .errors import (
     DiffDecodeError,
     DiffEncodeError,
@@ -58,39 +63,18 @@ class DeltaService:
         self.tool_version = tool_version
         self.max_ratio = max_ratio
 
-        # File extensions that should use delta compression
-        self.delta_extensions = {
-            ".zip",
-            ".tar",
-            ".gz",
-            ".tar.gz",
-            ".tgz",
-            ".bz2",
-            ".tar.bz2",
-            ".xz",
-            ".tar.xz",
-            ".7z",
-            ".rar",
-            ".dmg",
-            ".iso",
-            ".pkg",
-            ".deb",
-            ".rpm",
-            ".apk",
-            ".jar",
-            ".war",
-            ".ear",
-        }
+        # File extensions that should use delta compression. Keep mutable copies
+        # so advanced callers can customize the policy if needed.
+        self.delta_extensions = set(DEFAULT_DELTA_EXTENSIONS)
+        self.compound_delta_extensions = DEFAULT_COMPOUND_DELTA_EXTENSIONS
 
     def should_use_delta(self, filename: str) -> bool:
         """Check if file should use delta compression based on extension."""
-        name_lower = filename.lower()
-        # Check compound extensions first
-        for ext in [".tar.gz", ".tar.bz2", ".tar.xz"]:
-            if name_lower.endswith(ext):
-                return True
-        # Check simple extensions
-        return any(name_lower.endswith(ext) for ext in self.delta_extensions)
+        return is_delta_candidate(
+            filename,
+            simple_extensions=self.delta_extensions,
+            compound_extensions=self.compound_delta_extensions,
+        )
 
     def put(
         self,

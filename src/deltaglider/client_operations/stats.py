@@ -8,92 +8,27 @@ This module contains DeltaGlider-specific statistics operations:
 """
 
 import concurrent.futures
+import json
 import re
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ..client_models import BucketStats, CompressionEstimate, ObjectInfo
+from ..core.delta_extensions import is_delta_candidate
+from ..core.object_listing import list_all_objects
+from ..core.s3_uri import parse_s3_url
+
+StatsMode = Literal["quick", "sampled", "detailed"]
+
+# Cache configuration
+CACHE_VERSION = "1.0"
+CACHE_PREFIX = ".deltaglider"
 
 # ============================================================================
 # Internal Helper Functions
 # ============================================================================
-
-
-def _collect_objects_with_pagination(
-    client: Any,
-    bucket: str,
-    max_iterations: int = 10000,
-) -> list[dict[str, Any]]:
-    """Collect all objects from bucket with pagination safety.
-
-    Args:
-        client: DeltaGliderClient instance
-        bucket: S3 bucket name
-        max_iterations: Max pagination iterations (default: 10000 = 10M objects)
-
-    Returns:
-        List of object dicts with 'key' and 'size' fields
-
-    Raises:
-        RuntimeError: If listing fails with no objects collected
-    """
-    raw_objects = []
-    start_after = None
-    iteration_count = 0
-
-    try:
-        while True:
-            iteration_count += 1
-            if iteration_count > max_iterations:
-                client.service.logger.warning(
-                    f"_collect_objects: Reached max iterations ({max_iterations}). "
-                    f"Returning partial results: {len(raw_objects)} objects."
-                )
-                break
-
-            try:
-                response = client.service.storage.list_objects(
-                    bucket=bucket,
-                    prefix="",
-                    max_keys=1000,
-                    start_after=start_after,
-                )
-            except Exception as e:
-                if len(raw_objects) == 0:
-                    raise RuntimeError(f"Failed to list objects in bucket '{bucket}': {e}") from e
-                client.service.logger.warning(
-                    f"_collect_objects: Pagination error after {len(raw_objects)} objects: {e}. "
-                    f"Returning partial results."
-                )
-                break
-
-            # Collect objects
-            for obj_dict in response.get("objects", []):
-                raw_objects.append(obj_dict)
-
-            # Check pagination status
-            if not response.get("is_truncated"):
-                break
-
-            start_after = response.get("next_continuation_token")
-
-            # Safety: missing token with truncated=True indicates broken pagination
-            if not start_after:
-                client.service.logger.warning(
-                    f"_collect_objects: Pagination bug (truncated=True, no token). "
-                    f"Processed {len(raw_objects)} objects."
-                )
-                break
-
-    except Exception as e:
-        if len(raw_objects) == 0:
-            raise RuntimeError(f"Failed to collect bucket statistics for '{bucket}': {e}") from e
-        client.service.logger.error(
-            f"_collect_objects: Unexpected error after {len(raw_objects)} objects: {e}. "
-            f"Returning partial results."
-        )
-
-    return raw_objects
 
 
 def _fetch_delta_metadata(
@@ -113,12 +48,14 @@ def _fetch_delta_metadata(
     Returns:
         Dict mapping delta key -> metadata dict
     """
-    metadata_map = {}
+    metadata_map: dict[str, dict[str, Any]] = {}
 
     if not delta_keys:
         return metadata_map
 
-    client.service.logger.info(f"Fetching metadata for {len(delta_keys)} delta files in parallel...")
+    client.service.logger.info(
+        f"Fetching metadata for {len(delta_keys)} delta files in parallel..."
+    )
 
     def fetch_single_metadata(key: str) -> tuple[str, dict[str, Any] | None]:
         try:
@@ -158,10 +95,186 @@ def _fetch_delta_metadata(
     return metadata_map
 
 
+def _extract_deltaspace(key: str) -> str:
+    """Return the delta space (prefix) for a given object key."""
+    if "/" in key:
+        return key.rsplit("/", 1)[0]
+    return ""
+
+
+def _get_cache_key(mode: StatsMode) -> str:
+    """Get the S3 key for a cache file based on mode.
+
+    Args:
+        mode: Stats mode (quick, sampled, or detailed)
+
+    Returns:
+        S3 key like ".deltaglider/stats_quick.json"
+    """
+    return f"{CACHE_PREFIX}/stats_{mode}.json"
+
+
+def _read_stats_cache(
+    client: Any,
+    bucket: str,
+    mode: StatsMode,
+) -> tuple[BucketStats | None, dict[str, Any] | None]:
+    """Read cached stats from S3 if available.
+
+    Args:
+        client: DeltaGliderClient instance
+        bucket: S3 bucket name
+        mode: Stats mode to read cache for
+
+    Returns:
+        Tuple of (BucketStats | None, validation_data | None)
+        Returns (None, None) if cache doesn't exist or is invalid
+    """
+    cache_key = _get_cache_key(mode)
+
+    try:
+        # Try to read cache file from S3
+        obj = client.service.storage.get(f"{bucket}/{cache_key}")
+        if not obj or not obj.data:
+            return None, None
+
+        # Parse JSON
+        cache_data = json.loads(obj.data.decode("utf-8"))
+
+        # Validate version
+        if cache_data.get("version") != CACHE_VERSION:
+            client.service.logger.warning(
+                f"Cache version mismatch: expected {CACHE_VERSION}, got {cache_data.get('version')}"
+            )
+            return None, None
+
+        # Validate mode
+        if cache_data.get("mode") != mode:
+            client.service.logger.warning(
+                f"Cache mode mismatch: expected {mode}, got {cache_data.get('mode')}"
+            )
+            return None, None
+
+        # Extract stats and validation data
+        stats_dict = cache_data.get("stats")
+        validation_data = cache_data.get("validation")
+
+        if not stats_dict or not validation_data:
+            client.service.logger.warning("Cache missing stats or validation data")
+            return None, None
+
+        # Reconstruct BucketStats from dict
+        stats = BucketStats(**stats_dict)
+
+        client.service.logger.debug(
+            f"Successfully read cache for {bucket} (mode={mode}, "
+            f"computed_at={cache_data.get('computed_at')})"
+        )
+
+        return stats, validation_data
+
+    except FileNotFoundError:
+        # Cache doesn't exist yet - this is normal
+        client.service.logger.debug(f"No cache found for {bucket} (mode={mode})")
+        return None, None
+    except json.JSONDecodeError as e:
+        client.service.logger.warning(f"Invalid JSON in cache file: {e}")
+        return None, None
+    except Exception as e:
+        client.service.logger.warning(f"Error reading cache: {e}")
+        return None, None
+
+
+def _write_stats_cache(
+    client: Any,
+    bucket: str,
+    mode: StatsMode,
+    stats: BucketStats,
+    object_count: int,
+    compressed_size: int,
+) -> None:
+    """Write computed stats to S3 cache.
+
+    Args:
+        client: DeltaGliderClient instance
+        bucket: S3 bucket name
+        mode: Stats mode being cached
+        stats: Computed BucketStats to cache
+        object_count: Current object count (for validation)
+        compressed_size: Current compressed size (for validation)
+    """
+    cache_key = _get_cache_key(mode)
+
+    try:
+        # Build cache structure
+        cache_data = {
+            "version": CACHE_VERSION,
+            "mode": mode,
+            "computed_at": datetime.now(UTC).isoformat(),
+            "validation": {
+                "object_count": object_count,
+                "compressed_size": compressed_size,
+            },
+            "stats": asdict(stats),
+        }
+
+        # Serialize to JSON
+        cache_json = json.dumps(cache_data, indent=2)
+
+        # Write to S3
+        client.service.storage.put(
+            address=f"{bucket}/{cache_key}",
+            data=cache_json.encode("utf-8"),
+            metadata={
+                "content-type": "application/json",
+                "x-deltaglider-cache": "true",
+            },
+        )
+
+        client.service.logger.info(
+            f"Wrote cache for {bucket} (mode={mode}, {len(cache_json)} bytes)"
+        )
+
+    except Exception as e:
+        # Log warning but don't fail - caching is optional
+        client.service.logger.warning(f"Failed to write cache (non-fatal): {e}")
+
+
+def _is_cache_valid(
+    cached_validation: dict[str, Any],
+    current_object_count: int,
+    current_compressed_size: int,
+) -> bool:
+    """Check if cached stats are still valid based on bucket state.
+
+    Validation strategy: Compare object count and total compressed size.
+    If either changed, the cache is stale.
+
+    Args:
+        cached_validation: Validation data from cache
+        current_object_count: Current object count from LIST
+        current_compressed_size: Current compressed size from LIST
+
+    Returns:
+        True if cache is still valid, False if stale
+    """
+    cached_count = cached_validation.get("object_count")
+    cached_size = cached_validation.get("compressed_size")
+
+    if cached_count != current_object_count:
+        return False
+
+    if cached_size != current_compressed_size:
+        return False
+
+    return True
+
+
 def _build_object_info_list(
     raw_objects: list[dict[str, Any]],
     metadata_map: dict[str, dict[str, Any]],
     logger: Any,
+    sampled_space_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> list[ObjectInfo]:
     """Build ObjectInfo list from raw objects and metadata.
 
@@ -180,8 +293,14 @@ def _build_object_info_list(
         size = obj_dict["size"]
         is_delta = key.endswith(".delta")
 
+        deltaspace = _extract_deltaspace(key)
+
         # Get metadata from map (empty dict if not present)
-        metadata = metadata_map.get(key, {})
+        metadata = metadata_map.get(key)
+        if metadata is None and sampled_space_metadata and deltaspace in sampled_space_metadata:
+            metadata = sampled_space_metadata[deltaspace]
+        if metadata is None:
+            metadata = {}
 
         # Parse compression ratio and original size
         compression_ratio = 0.0
@@ -195,9 +314,21 @@ def _build_object_info_list(
                 compression_ratio = 0.0
 
             try:
-                original_size = int(metadata.get("file_size", size))
-                logger.debug(f"Delta {key}: using original_size={original_size}")
-            except (ValueError, TypeError):
+                if "file_size" in metadata:
+                    original_size = int(metadata["file_size"])
+                    logger.debug(f"Delta {key}: using original_size={original_size} from metadata")
+                else:
+                    logger.warning(
+                        f"Delta {key}: metadata missing 'file_size' key. "
+                        f"Available keys: {list(metadata.keys())}. "
+                        f"Using compressed size={size} as fallback"
+                    )
+                    original_size = size
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"Delta {key}: failed to parse file_size from metadata: {e}. "
+                    f"Using compressed size={size} as fallback"
+                )
                 original_size = size
 
         all_objects.append(
@@ -261,7 +392,15 @@ def _calculate_bucket_statistics(
                 logger.debug(f"Delta {obj.key}: using original_size={obj.original_size}")
                 total_original_size += obj.original_size
             else:
-                logger.warning(f"Delta {obj.key}: no original_size, using compressed size={obj.size}")
+                # This warning should only appear if metadata is missing or incomplete
+                # If you see this, the delta file may have been uploaded with an older
+                # version of DeltaGlider or the upload was incomplete
+                logger.warning(
+                    f"Delta {obj.key}: no original_size metadata "
+                    f"(original_size={obj.original_size}, size={obj.size}). "
+                    f"Using compressed size as fallback. "
+                    f"This may undercount space savings."
+                )
                 total_original_size += obj.size
             total_compressed_size += obj.size
         else:
@@ -350,14 +489,9 @@ def get_object_info(
     Returns:
         ObjectInfo with detailed metadata
     """
-    # Parse URL
-    if not s3_url.startswith("s3://"):
-        raise ValueError(f"Invalid S3 URL: {s3_url}")
-
-    s3_path = s3_url[5:]
-    parts = s3_path.split("/", 1)
-    bucket = parts[0]
-    key = parts[1] if len(parts) > 1 else ""
+    address = parse_s3_url(s3_url, allow_empty_key=False)
+    bucket = address.bucket
+    key = address.key
 
     # Get object metadata
     obj_head = client.service.storage.head(f"{bucket}/{key}")
@@ -383,13 +517,25 @@ def get_object_info(
 def get_bucket_stats(
     client: Any,  # DeltaGliderClient
     bucket: str,
-    detailed_stats: bool = False,
+    mode: StatsMode = "quick",
+    use_cache: bool = True,
+    refresh_cache: bool = False,
 ) -> BucketStats:
-    """Get statistics for a bucket with optional detailed compression metrics.
+    """Get statistics for a bucket with configurable metadata strategies and caching.
 
-    This method provides two modes:
-    - Quick stats (default): Fast overview using LIST only (~50ms)
-    - Detailed stats: Accurate compression metrics with HEAD requests (slower)
+    Modes:
+    - ``quick`` (default): Stream LIST results only. Compression metrics for delta files are
+      approximate (falls back to delta size when metadata is unavailable).
+    - ``sampled``: Fetch HEAD metadata for a single delta per delta-space and reuse the ratios for
+      other deltas in the same space. Balances accuracy and speed.
+    - ``detailed``: Fetch HEAD metadata for every delta object for the most accurate statistics.
+
+    Caching:
+    - Stats are cached per mode in ``.deltaglider/stats_{mode}.json``
+    - Cache is validated using object count and compressed size from LIST
+    - If bucket changed, cache is recomputed automatically
+    - Use ``refresh_cache=True`` to force recomputation
+    - Use ``use_cache=False`` to skip caching entirely
 
     **Robustness**: This function is designed to always return valid stats:
     - Returns partial stats if timeouts or pagination issues occur
@@ -399,7 +545,9 @@ def get_bucket_stats(
     Args:
         client: DeltaGliderClient instance
         bucket: S3 bucket name
-        detailed_stats: If True, fetch accurate compression ratios for delta files (default: False)
+        mode: Stats mode ("quick", "sampled", or "detailed")
+        use_cache: If True, use cached stats when available (default: True)
+        refresh_cache: If True, force cache recomputation even if valid (default: False)
 
     Returns:
         BucketStats with compression and space savings info. Always returns a valid BucketStats
@@ -407,40 +555,221 @@ def get_bucket_stats(
 
     Raises:
         RuntimeError: Only if bucket listing fails immediately with no objects collected.
-                     All other errors result in partial/empty stats being returned.
+                      All other errors result in partial/empty stats being returned.
 
     Performance:
-        - With detailed_stats=False: ~50ms for any bucket size (1 LIST call per 1000 objects)
-        - With detailed_stats=True: ~2-3s per 1000 objects (adds HEAD calls for delta files only)
+        - With cache hit: ~50-100ms (LIST + cache read + validation)
+        - quick (no cache): ~50ms for any bucket size (LIST calls only)
+        - sampled (no cache): LIST + one HEAD per delta-space
+        - detailed (no cache): LIST + HEAD for every delta (slowest but accurate)
         - Max timeout: 10 minutes (prevents indefinite hangs)
         - Max objects: 10M (prevents infinite loops)
 
     Example:
-        # Quick stats for dashboard display
+        # Use cached stats (fast, ~100ms)
         stats = client.get_bucket_stats('releases')
-        print(f"Objects: {stats.object_count}, Size: {stats.total_size}")
 
-        # Detailed stats for analytics (slower but accurate)
-        stats = client.get_bucket_stats('releases', detailed_stats=True)
-        print(f"Compression ratio: {stats.average_compression_ratio:.1%}")
+        # Force refresh (slow, recomputes everything)
+        stats = client.get_bucket_stats('releases', refresh_cache=True)
+
+        # Skip cache entirely
+        stats = client.get_bucket_stats('releases', use_cache=False)
+
+        # Different modes with caching
+        stats_sampled = client.get_bucket_stats('releases', mode='sampled')
+        stats_detailed = client.get_bucket_stats('releases', mode='detailed')
     """
     try:
-        # Phase 1: Collect all objects with pagination safety
-        raw_objects = _collect_objects_with_pagination(client, bucket)
+        if mode not in {"quick", "sampled", "detailed"}:
+            raise ValueError(f"Unknown stats mode: {mode}")
 
-        # Phase 2: Extract delta keys for metadata fetching
+        # Phase 1: Always do a quick LIST to get current state (needed for validation)
+        import time
+
+        phase1_start = time.time()
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 1: Starting LIST operation for bucket '{bucket}'"
+        )
+
+        listing = list_all_objects(
+            client.service.storage,
+            bucket=bucket,
+            max_keys=1000,
+            logger=client.service.logger,
+        )
+        raw_objects = listing.objects
+
+        # Calculate validation metrics from LIST
+        current_object_count = len(raw_objects)
+        current_compressed_size = sum(obj["size"] for obj in raw_objects)
+
+        phase1_duration = time.time() - phase1_start
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 1: LIST completed in {phase1_duration:.2f}s - "
+            f"Found {current_object_count} objects, {current_compressed_size:,} bytes total"
+        )
+
+        # Phase 2: Try to use cache if enabled and not forcing refresh
+        phase2_start = time.time()
+        if use_cache and not refresh_cache:
+            client.service.logger.info(
+                f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Checking cache for mode '{mode}'"
+            )
+            cached_stats, cached_validation = _read_stats_cache(client, bucket, mode)
+
+            if cached_stats and cached_validation:
+                # Validate cache against current bucket state
+                if _is_cache_valid(
+                    cached_validation, current_object_count, current_compressed_size
+                ):
+                    phase2_duration = time.time() - phase2_start
+                    client.service.logger.info(
+                        f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Cache HIT in {phase2_duration:.2f}s - "
+                        f"Using cached stats for {bucket} (mode={mode}, bucket unchanged)"
+                    )
+                    return cached_stats
+                else:
+                    phase2_duration = time.time() - phase2_start
+                    client.service.logger.info(
+                        f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Cache INVALID in {phase2_duration:.2f}s - "
+                        f"Bucket changed: count {cached_validation.get('object_count')} → {current_object_count}, "
+                        f"size {cached_validation.get('compressed_size')} → {current_compressed_size}"
+                    )
+            else:
+                phase2_duration = time.time() - phase2_start
+                client.service.logger.info(
+                    f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Cache MISS in {phase2_duration:.2f}s - "
+                    f"No valid cache found"
+                )
+        else:
+            if refresh_cache:
+                client.service.logger.info(
+                    f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Cache SKIPPED (refresh requested)"
+                )
+            elif not use_cache:
+                client.service.logger.info(
+                    f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Cache DISABLED"
+                )
+
+        # Phase 3: Cache miss or invalid - compute stats from scratch
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 3: Computing stats (mode={mode})"
+        )
+
+        # Phase 4: Extract delta keys for metadata fetching
+        phase4_start = time.time()
         delta_keys = [obj["key"] for obj in raw_objects if obj["key"].endswith(".delta")]
+        phase4_duration = time.time() - phase4_start
 
-        # Phase 3: Fetch metadata for delta files (only if detailed_stats requested)
-        metadata_map = {}
-        if detailed_stats and delta_keys:
-            metadata_map = _fetch_delta_metadata(client, bucket, delta_keys)
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 4: Delta extraction completed in {phase4_duration:.3f}s - "
+            f"Found {len(delta_keys)} delta files"
+        )
 
-        # Phase 4: Build ObjectInfo list
-        all_objects = _build_object_info_list(raw_objects, metadata_map, client.service.logger)
+        # Phase 5: Fetch metadata for delta files based on mode
+        phase5_start = time.time()
+        metadata_map: dict[str, dict[str, Any]] = {}
+        sampled_space_metadata: dict[str, dict[str, Any]] | None = None
 
-        # Phase 5: Calculate final statistics
-        return _calculate_bucket_statistics(all_objects, bucket, client.service.logger)
+        if delta_keys:
+            if mode == "detailed":
+                client.service.logger.info(
+                    f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 5: Fetching metadata for ALL {len(delta_keys)} delta files"
+                )
+                metadata_map = _fetch_delta_metadata(client, bucket, delta_keys)
+
+            elif mode == "sampled":
+                # Sample one delta per deltaspace
+                seen_spaces: set[str] = set()
+                sampled_keys: list[str] = []
+                for key in delta_keys:
+                    space = _extract_deltaspace(key)
+                    if space not in seen_spaces:
+                        seen_spaces.add(space)
+                        sampled_keys.append(key)
+
+                client.service.logger.info(
+                    f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 5: Sampling {len(sampled_keys)} delta files "
+                    f"(one per deltaspace) out of {len(delta_keys)} total delta files"
+                )
+
+                # Log which files are being sampled
+                if sampled_keys:
+                    for idx, key in enumerate(sampled_keys[:10], 1):  # Show first 10
+                        space = _extract_deltaspace(key)
+                        client.service.logger.info(
+                            f"  [{idx}] Sampling: {key} (deltaspace: '{space or '(root)'}')"
+                        )
+                    if len(sampled_keys) > 10:
+                        client.service.logger.info(f"  ... and {len(sampled_keys) - 10} more")
+
+                if sampled_keys:
+                    metadata_map = _fetch_delta_metadata(client, bucket, sampled_keys)
+                    sampled_space_metadata = {
+                        _extract_deltaspace(k): metadata for k, metadata in metadata_map.items()
+                    }
+
+        phase5_duration = time.time() - phase5_start
+        if mode == "quick":
+            client.service.logger.info(
+                f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 5: Skipped metadata fetching (quick mode) in {phase5_duration:.3f}s"
+            )
+        else:
+            client.service.logger.info(
+                f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 5: Metadata fetching completed in {phase5_duration:.2f}s - "
+                f"Fetched {len(metadata_map)} metadata records"
+            )
+
+        # Phase 6: Build ObjectInfo list
+        phase6_start = time.time()
+        all_objects = _build_object_info_list(
+            raw_objects,
+            metadata_map,
+            client.service.logger,
+            sampled_space_metadata,
+        )
+        phase6_duration = time.time() - phase6_start
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 6: ObjectInfo list built in {phase6_duration:.3f}s - "
+            f"{len(all_objects)} objects processed"
+        )
+
+        # Phase 7: Calculate final statistics
+        phase7_start = time.time()
+        stats = _calculate_bucket_statistics(all_objects, bucket, client.service.logger)
+        phase7_duration = time.time() - phase7_start
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 7: Statistics calculated in {phase7_duration:.3f}s - "
+            f"{stats.delta_objects} delta, {stats.direct_objects} direct objects"
+        )
+
+        # Phase 8: Write cache if enabled
+        phase8_start = time.time()
+        if use_cache:
+            _write_stats_cache(
+                client=client,
+                bucket=bucket,
+                mode=mode,
+                stats=stats,
+                object_count=current_object_count,
+                compressed_size=current_compressed_size,
+            )
+            phase8_duration = time.time() - phase8_start
+            client.service.logger.info(
+                f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 8: Cache written in {phase8_duration:.3f}s"
+            )
+        else:
+            client.service.logger.info(
+                f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 8: Cache write skipped (caching disabled)"
+            )
+
+        # Summary
+        total_duration = time.time() - phase1_start
+        client.service.logger.info(
+            f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] COMPLETE: Total time {total_duration:.2f}s for bucket '{bucket}' (mode={mode})"
+        )
+
+        return stats
 
     except Exception as e:
         # Last resort: return empty stats with error indication
@@ -487,30 +816,8 @@ def estimate_compression(
     file_path = Path(file_path)
     file_size = file_path.stat().st_size
 
-    # Check file extension
+    filename = file_path.name
     ext = file_path.suffix.lower()
-    delta_extensions = {
-        ".zip",
-        ".tar",
-        ".gz",
-        ".tar.gz",
-        ".tgz",
-        ".bz2",
-        ".tar.bz2",
-        ".xz",
-        ".tar.xz",
-        ".7z",
-        ".rar",
-        ".dmg",
-        ".iso",
-        ".pkg",
-        ".deb",
-        ".rpm",
-        ".apk",
-        ".jar",
-        ".war",
-        ".ear",
-    }
 
     # Already compressed formats that won't benefit from delta
     incompressible = {".jpg", ".jpeg", ".png", ".mp4", ".mp3", ".avi", ".mov"}
@@ -524,7 +831,7 @@ def estimate_compression(
             should_use_delta=False,
         )
 
-    if ext not in delta_extensions:
+    if not is_delta_candidate(filename):
         # Unknown type, conservative estimate
         return CompressionEstimate(
             original_size=file_size,

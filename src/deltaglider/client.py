@@ -33,10 +33,14 @@ from .client_operations import (
     upload_batch as _upload_batch,
     upload_chunked as _upload_chunked,
 )
+
 # fmt: on
+from .client_operations.stats import StatsMode
 
 from .core import DeltaService, DeltaSpace, ObjectKey
 from .core.errors import NotFoundError
+from .core.object_listing import ObjectListing, list_objects_page
+from .core.s3_uri import parse_s3_url
 from .response_builders import (
     build_delete_response,
     build_get_response,
@@ -64,7 +68,7 @@ class DeltaGliderClient:
         self.endpoint_url = endpoint_url
         self._multipart_uploads: dict[str, Any] = {}  # Track multipart uploads
         # Session-scoped bucket statistics cache (cleared with the client lifecycle)
-        self._bucket_stats_cache: dict[str, dict[bool, BucketStats]] = {}
+        self._bucket_stats_cache: dict[str, dict[str, BucketStats]] = {}
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -80,35 +84,45 @@ class DeltaGliderClient:
     def _store_bucket_stats_cache(
         self,
         bucket: str,
-        detailed_stats: bool,
+        mode: StatsMode,
         stats: BucketStats,
     ) -> None:
         """Store bucket statistics in the session cache."""
         bucket_cache = self._bucket_stats_cache.setdefault(bucket, {})
-        bucket_cache[detailed_stats] = stats
-        # Detailed stats are a superset of quick stats; reuse them for quick calls.
-        if detailed_stats:
-            bucket_cache[False] = stats
+        bucket_cache[mode] = stats
+        if mode == "detailed":
+            bucket_cache["sampled"] = stats
+            bucket_cache["quick"] = stats
+        elif mode == "sampled":
+            bucket_cache.setdefault("quick", stats)
 
-    def _get_cached_bucket_stats(self, bucket: str, detailed_stats: bool) -> BucketStats | None:
-        """Retrieve cached stats for a bucket, preferring detailed metrics when available."""
+    def _get_cached_bucket_stats(self, bucket: str, mode: StatsMode) -> BucketStats | None:
+        """Retrieve cached stats for a bucket, preferring more detailed metrics when available."""
         bucket_cache = self._bucket_stats_cache.get(bucket)
         if not bucket_cache:
             return None
-        if detailed_stats:
-            return bucket_cache.get(True)
-        return bucket_cache.get(False) or bucket_cache.get(True)
+        if mode == "detailed":
+            return bucket_cache.get("detailed")
+        if mode == "sampled":
+            return bucket_cache.get("sampled") or bucket_cache.get("detailed")
+        return (
+            bucket_cache.get("quick") or bucket_cache.get("sampled") or bucket_cache.get("detailed")
+        )
 
-    def _get_cached_bucket_stats_for_listing(self, bucket: str) -> tuple[BucketStats | None, bool]:
+    def _get_cached_bucket_stats_for_listing(
+        self, bucket: str
+    ) -> tuple[BucketStats | None, StatsMode | None]:
         """Return best cached stats for bucket listings."""
         bucket_cache = self._bucket_stats_cache.get(bucket)
         if not bucket_cache:
-            return (None, False)
-        if True in bucket_cache:
-            return (bucket_cache[True], True)
-        if False in bucket_cache:
-            return (bucket_cache[False], False)
-        return (None, False)
+            return (None, None)
+        if "detailed" in bucket_cache:
+            return (bucket_cache["detailed"], "detailed")
+        if "sampled" in bucket_cache:
+            return (bucket_cache["sampled"], "sampled")
+        if "quick" in bucket_cache:
+            return (bucket_cache["quick"], "quick")
+        return (None, None)
 
     # ============================================================================
     # Boto3-compatible APIs (matches S3 client interface)
@@ -328,34 +342,32 @@ class DeltaGliderClient:
                 FetchMetadata=True  # Only fetches for delta files
             )
         """
-        # Use storage adapter's list_objects method
-        if hasattr(self.service.storage, "list_objects"):
-            result = self.service.storage.list_objects(
+        start_after = StartAfter or ContinuationToken
+        try:
+            listing = list_objects_page(
+                self.service.storage,
                 bucket=Bucket,
                 prefix=Prefix,
                 delimiter=Delimiter,
                 max_keys=MaxKeys,
-                start_after=StartAfter or ContinuationToken,  # Support both pagination methods
+                start_after=start_after,
             )
-        elif isinstance(self.service.storage, S3StorageAdapter):
-            result = self.service.storage.list_objects(
-                bucket=Bucket,
-                prefix=Prefix,
-                delimiter=Delimiter,
-                max_keys=MaxKeys,
-                start_after=StartAfter or ContinuationToken,
-            )
-        else:
-            # Fallback
-            result = {
-                "objects": [],
-                "common_prefixes": [],
-                "is_truncated": False,
-            }
+        except NotImplementedError:
+            if isinstance(self.service.storage, S3StorageAdapter):
+                listing = list_objects_page(
+                    self.service.storage,
+                    bucket=Bucket,
+                    prefix=Prefix,
+                    delimiter=Delimiter,
+                    max_keys=MaxKeys,
+                    start_after=start_after,
+                )
+            else:
+                listing = ObjectListing()
 
         # Convert to boto3-compatible S3Object TypedDicts (type-safe!)
         contents: list[S3Object] = []
-        for obj in result.get("objects", []):
+        for obj in listing.objects:
             # Skip reference.bin files (internal files, never exposed to users)
             if obj["key"].endswith("/reference.bin") or obj["key"] == "reference.bin":
                 continue
@@ -403,14 +415,14 @@ class DeltaGliderClient:
                 "Key": display_key,  # Use cleaned key without .delta
                 "Size": obj["size"],
                 "LastModified": obj.get("last_modified", ""),
-                "ETag": obj.get("etag"),
+                "ETag": str(obj.get("etag", "")),
                 "StorageClass": obj.get("storage_class", "STANDARD"),
                 "Metadata": deltaglider_metadata,
             }
             contents.append(s3_obj)
 
         # Build type-safe boto3-compatible CommonPrefix TypedDicts
-        common_prefixes = result.get("common_prefixes", [])
+        common_prefixes = listing.common_prefixes
         common_prefix_dicts: list[CommonPrefix] | None = (
             [CommonPrefix(Prefix=p) for p in common_prefixes] if common_prefixes else None
         )
@@ -425,8 +437,8 @@ class DeltaGliderClient:
                 max_keys=MaxKeys,
                 contents=contents,
                 common_prefixes=common_prefix_dicts,
-                is_truncated=result.get("is_truncated", False),
-                next_continuation_token=result.get("next_continuation_token"),
+                is_truncated=listing.is_truncated,
+                next_continuation_token=listing.next_continuation_token,
                 continuation_token=ContinuationToken,
             ),
         )
@@ -736,14 +748,9 @@ class DeltaGliderClient:
         """
         file_path = Path(file_path)
 
-        # Parse S3 URL
-        if not s3_url.startswith("s3://"):
-            raise ValueError(f"Invalid S3 URL: {s3_url}")
-
-        s3_path = s3_url[5:].rstrip("/")
-        parts = s3_path.split("/", 1)
-        bucket = parts[0]
-        prefix = parts[1] if len(parts) > 1 else ""
+        address = parse_s3_url(s3_url, strip_trailing_slash=True)
+        bucket = address.bucket
+        prefix = address.key
 
         # Create delta space and upload
         delta_space = DeltaSpace(bucket=bucket, prefix=prefix)
@@ -776,17 +783,9 @@ class DeltaGliderClient:
         """
         output_path = Path(output_path)
 
-        # Parse S3 URL
-        if not s3_url.startswith("s3://"):
-            raise ValueError(f"Invalid S3 URL: {s3_url}")
-
-        s3_path = s3_url[5:]
-        parts = s3_path.split("/", 1)
-        if len(parts) < 2:
-            raise ValueError(f"S3 URL must include key: {s3_url}")
-
-        bucket = parts[0]
-        key = parts[1]
+        address = parse_s3_url(s3_url, allow_empty_key=False)
+        bucket = address.bucket
+        key = address.key
 
         # Auto-append .delta if the file doesn't exist without it
         # This allows users to specify the original name and we'll find the delta
@@ -812,17 +811,9 @@ class DeltaGliderClient:
         Returns:
             True if verification passed, False otherwise
         """
-        # Parse S3 URL
-        if not s3_url.startswith("s3://"):
-            raise ValueError(f"Invalid S3 URL: {s3_url}")
-
-        s3_path = s3_url[5:]
-        parts = s3_path.split("/", 1)
-        if len(parts) < 2:
-            raise ValueError(f"S3 URL must include key: {s3_url}")
-
-        bucket = parts[0]
-        key = parts[1]
+        address = parse_s3_url(s3_url, allow_empty_key=False)
+        bucket = address.bucket
+        key = address.key
 
         obj_key = ObjectKey(bucket=bucket, key=key)
         result = self.service.verify(obj_key)
@@ -965,39 +956,62 @@ class DeltaGliderClient:
         result: ObjectInfo = _get_object_info(self, s3_url)
         return result
 
-    def get_bucket_stats(self, bucket: str, detailed_stats: bool = False) -> BucketStats:
-        """Get statistics for a bucket with optional detailed compression metrics.
+    def get_bucket_stats(
+        self,
+        bucket: str,
+        mode: StatsMode = "quick",
+        use_cache: bool = True,
+        refresh_cache: bool = False,
+    ) -> BucketStats:
+        """Get statistics for a bucket with selectable accuracy modes and S3-based caching.
 
-        This method provides two modes:
-        - Quick stats (default): Fast overview using LIST only (~50ms)
-        - Detailed stats: Accurate compression metrics with HEAD requests (slower)
+        Modes:
+            - ``quick``: Fast listing-only stats (delta compression approximated).
+            - ``sampled``: Fetch one delta HEAD per delta-space and reuse the ratio.
+            - ``detailed``: Fetch metadata for every delta object (slowest, most accurate).
+
+        Caching:
+            - Stats are cached in S3 at ``.deltaglider/stats_{mode}.json``
+            - Cache is automatically validated on every call (uses LIST operation)
+            - If bucket changed, cache is recomputed automatically
+            - Use ``refresh_cache=True`` to force recomputation
+            - Use ``use_cache=False`` to skip caching entirely
 
         Args:
             bucket: S3 bucket name
-            detailed_stats: If True, fetch accurate compression ratios for delta files (default: False)
+            mode: Stats mode ("quick", "sampled", or "detailed")
+            use_cache: If True, use S3-cached stats when available (default: True)
+            refresh_cache: If True, force cache recomputation even if valid (default: False)
 
         Returns:
             BucketStats with compression and space savings info
 
         Performance:
-            - With detailed_stats=False: ~50ms for any bucket size (1 LIST call per 1000 objects)
-            - With detailed_stats=True: ~2-3s per 1000 objects (adds HEAD calls for delta files only)
+            - With cache hit: ~50-100ms (LIST + cache read + validation)
+            - quick (no cache): ~50ms per 1000 objects (LIST only)
+            - sampled (no cache): ~60 HEAD calls per 60 delta-spaces plus LIST
+            - detailed (no cache): ~2-3s per 1000 delta objects (LIST + HEAD per delta)
 
         Example:
-            # Quick stats for dashboard display
+            # Quick stats with caching (fast, ~100ms)
             stats = client.get_bucket_stats('releases')
-            print(f"Objects: {stats.object_count}, Size: {stats.total_size}")
 
-            # Detailed stats for analytics (slower but accurate)
-            stats = client.get_bucket_stats('releases', detailed_stats=True)
-            print(f"Compression ratio: {stats.average_compression_ratio:.1%}")
+            # Force refresh (slow, recomputes everything)
+            stats = client.get_bucket_stats('releases', refresh_cache=True)
+
+            # Skip cache entirely
+            stats = client.get_bucket_stats('releases', use_cache=False)
+
+            # Detailed stats with caching
+            stats = client.get_bucket_stats('releases', mode='detailed')
         """
-        cached = self._get_cached_bucket_stats(bucket, detailed_stats)
-        if cached:
-            return cached
+        if mode not in {"quick", "sampled", "detailed"}:
+            raise ValueError(f"Unknown stats mode: {mode}")
 
-        result: BucketStats = _get_bucket_stats(self, bucket, detailed_stats)
-        self._store_bucket_stats_cache(bucket, detailed_stats, result)
+        # Use S3-based caching from stats.py (replaces old in-memory cache)
+        result: BucketStats = _get_bucket_stats(
+            self, bucket, mode=mode, use_cache=use_cache, refresh_cache=refresh_cache
+        )
         return result
 
     def generate_presigned_url(

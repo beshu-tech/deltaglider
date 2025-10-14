@@ -92,7 +92,7 @@ class TestBucketStatsAlgorithm:
         mock_client.service.storage.head.side_effect = mock_head
 
         # Execute
-        stats = get_bucket_stats(mock_client, "compressed-bucket")
+        stats = get_bucket_stats(mock_client, "compressed-bucket", mode="detailed")
 
         # Verify
         assert stats.object_count == 2  # Only delta files counted (not reference.bin)
@@ -164,7 +164,7 @@ class TestBucketStatsAlgorithm:
         mock_client.service.storage.head.side_effect = mock_head
 
         # Execute
-        stats = get_bucket_stats(mock_client, "mixed-bucket")
+        stats = get_bucket_stats(mock_client, "mixed-bucket", mode="detailed")
 
         # Verify
         assert stats.object_count == 4  # 2 delta + 2 direct files
@@ -229,7 +229,7 @@ class TestBucketStatsAlgorithm:
         mock_client.service.storage.head.side_effect = mock_head
 
         # Execute
-        stats = get_bucket_stats(mock_client, "multi-deltaspace-bucket")
+        stats = get_bucket_stats(mock_client, "multi-deltaspace-bucket", mode="detailed")
 
         # Verify
         assert stats.object_count == 2  # Only delta files
@@ -347,40 +347,57 @@ class TestBucketStatsAlgorithm:
             )
 
             with patch_as_completed:
-                _ = get_bucket_stats(mock_client, "parallel-bucket")
+                _ = get_bucket_stats(mock_client, "parallel-bucket", mode="detailed")
 
         # Verify ThreadPoolExecutor was used with correct max_workers
         mock_executor.assert_called_once_with(max_workers=10)  # min(10, 50) = 10
 
-    def test_detailed_stats_flag(self, mock_client):
-        """Test that detailed_stats flag controls metadata fetching."""
-        # Setup
+    def test_stats_modes_control_metadata_fetch(self, mock_client):
+        """Metadata fetching should depend on the selected stats mode."""
         mock_client.service.storage.list_objects.return_value = {
             "objects": [
-                {"key": "reference.bin", "size": 20000000, "last_modified": "2024-01-01"},
-                {"key": "file.zip.delta", "size": 50000, "last_modified": "2024-01-02"},
+                {"key": "alpha/reference.bin", "size": 100, "last_modified": "2024-01-01"},
+                {"key": "alpha/file1.zip.delta", "size": 10, "last_modified": "2024-01-02"},
+                {"key": "alpha/file2.zip.delta", "size": 12, "last_modified": "2024-01-03"},
+                {"key": "beta/reference.bin", "size": 200, "last_modified": "2024-01-04"},
+                {"key": "beta/file1.zip.delta", "size": 20, "last_modified": "2024-01-05"},
             ],
             "is_truncated": False,
         }
 
-        # Test with detailed_stats=False (default)
-        # NOTE: Currently, the implementation always fetches metadata regardless of the flag
-        # This test documents the current behavior
-        _ = get_bucket_stats(mock_client, "test-bucket", detailed_stats=False)
+        metadata_by_key = {
+            "alpha/file1.zip.delta": {"file_size": "100", "compression_ratio": "0.9"},
+            "alpha/file2.zip.delta": {"file_size": "120", "compression_ratio": "0.88"},
+            "beta/file1.zip.delta": {"file_size": "210", "compression_ratio": "0.9"},
+        }
 
-        # Currently metadata is always fetched for delta files
-        assert mock_client.service.storage.head.called
+        def mock_head(path: str):
+            for key, metadata in metadata_by_key.items():
+                if key in path:
+                    head = Mock()
+                    head.metadata = metadata
+                    return head
+            return None
 
-        # Reset mock
+        mock_client.service.storage.head.side_effect = mock_head
+
+        # Quick mode: no metadata fetch
+        _ = get_bucket_stats(mock_client, "mode-test", mode="quick")
+        assert mock_client.service.storage.head.call_count == 0
+
+        # Sampled mode: one HEAD per delta-space (alpha, beta)
         mock_client.service.storage.head.reset_mock()
+        stats_sampled = get_bucket_stats(mock_client, "mode-test", mode="sampled")
+        assert mock_client.service.storage.head.call_count == 2
 
-        # Test with detailed_stats=True
-        mock_client.service.storage.head.return_value = Mock(metadata={"file_size": "19500000"})
+        # Detailed mode: HEAD for every delta (3 total)
+        mock_client.service.storage.head.reset_mock()
+        stats_detailed = get_bucket_stats(mock_client, "mode-test", mode="detailed")
+        assert mock_client.service.storage.head.call_count == 3
 
-        _ = get_bucket_stats(mock_client, "test-bucket", detailed_stats=True)
-
-        # Should fetch metadata
-        assert mock_client.service.storage.head.called
+        # Sampled totals should be close to detailed but not identical
+        assert stats_detailed.total_size == 100 + 120 + 210
+        assert stats_sampled.total_size == 100 + 100 + 210
 
     def test_error_handling_in_metadata_fetch(self, mock_client):
         """Test graceful handling of errors during metadata fetch."""
@@ -407,7 +424,7 @@ class TestBucketStatsAlgorithm:
         mock_client.service.storage.head.side_effect = mock_head
 
         # Execute - should handle error gracefully
-        stats = get_bucket_stats(mock_client, "error-bucket", detailed_stats=True)
+        stats = get_bucket_stats(mock_client, "error-bucket", mode="detailed")
 
         # Verify - file1 uses fallback, file2 uses metadata
         assert stats.object_count == 2

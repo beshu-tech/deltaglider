@@ -97,6 +97,7 @@ class S3StorageAdapter(StoragePort):
         delimiter: str = "",
         max_keys: int = 1000,
         start_after: str | None = None,
+        continuation_token: str | None = None,
     ) -> dict[str, Any]:
         """List objects with S3-compatible response.
 
@@ -105,7 +106,8 @@ class S3StorageAdapter(StoragePort):
             prefix: Filter results to keys beginning with prefix
             delimiter: Delimiter for grouping keys (e.g., '/' for folders)
             max_keys: Maximum number of keys to return
-            start_after: Start listing after this key
+            start_after: Start listing after this key (for first page only)
+            continuation_token: Token from previous response for pagination
 
         Returns:
             Dict with objects, common_prefixes, and pagination info
@@ -119,7 +121,11 @@ class S3StorageAdapter(StoragePort):
             params["Prefix"] = prefix
         if delimiter:
             params["Delimiter"] = delimiter
-        if start_after:
+
+        # Use ContinuationToken for pagination if available, otherwise StartAfter
+        if continuation_token:
+            params["ContinuationToken"] = continuation_token
+        elif start_after:
             params["StartAfter"] = start_after
 
         try:

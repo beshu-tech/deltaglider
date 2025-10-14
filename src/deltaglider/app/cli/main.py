@@ -623,19 +623,13 @@ def sync(
 @click.pass_obj
 def verify(service: DeltaService, s3_url: str) -> None:
     """Verify integrity of delta file."""
-    # Parse S3 URL
-    if not s3_url.startswith("s3://"):
+    try:
+        bucket, key = parse_s3_url(s3_url)
+        if not key:
+            raise ValueError("Missing key")
+    except ValueError:
         click.echo(f"Error: Invalid S3 URL: {s3_url}", err=True)
         sys.exit(1)
-
-    s3_path = s3_url[5:]
-    parts = s3_path.split("/", 1)
-    if len(parts) != 2:
-        click.echo(f"Error: Invalid S3 URL: {s3_url}", err=True)
-        sys.exit(1)
-
-    bucket = parts[0]
-    key = parts[1]
 
     obj_key = ObjectKey(bucket=bucket, key=key)
 
@@ -753,38 +747,103 @@ def migrate(
         sys.exit(1)
 
 
-@cli.command()
+@cli.command(short_help="Get bucket statistics and compression metrics")
 @click.argument("bucket")
-@click.option("--detailed", is_flag=True, help="Fetch detailed compression metrics (slower)")
+@click.option("--sampled", is_flag=True, help="Balanced mode: one sample per deltaspace (~5-15s)")
+@click.option(
+    "--detailed", is_flag=True, help="Most accurate: HEAD for all deltas (slowest, ~1min+)"
+)
+@click.option("--refresh", is_flag=True, help="Force cache refresh even if valid")
+@click.option("--no-cache", is_flag=True, help="Skip caching entirely (both read and write)")
 @click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
 @click.pass_obj
-def stats(service: DeltaService, bucket: str, detailed: bool, output_json: bool) -> None:
-    """Get bucket statistics and compression metrics.
+def stats(
+    service: DeltaService,
+    bucket: str,
+    sampled: bool,
+    detailed: bool,
+    refresh: bool,
+    no_cache: bool,
+    output_json: bool,
+) -> None:
+    """Get bucket statistics and compression metrics with intelligent S3-based caching.
 
     BUCKET can be specified as:
       - s3://bucket-name/
       - s3://bucket-name
       - bucket-name
+
+    Modes (mutually exclusive):
+      - quick (default): Fast listing-only stats (~0.5s), approximate compression metrics
+      - --sampled: Balanced mode - one HEAD per deltaspace (~5-15s for typical buckets)
+      - --detailed: Most accurate - HEAD for every delta file (slowest, ~1min+ for large buckets)
+
+    Caching (NEW - massive performance improvement!):
+      Stats are cached in S3 at .deltaglider/stats_{mode}.json (one per mode).
+      Cache is automatically validated on every call using object count + size.
+      If bucket changed, stats are recomputed automatically.
+
+      Performance with cache:
+        - Cache hit: ~0.1s (200x faster than recomputation!)
+        - Cache miss: Full computation time (creates cache for next time)
+        - Cache invalid: Auto-recomputes when bucket changes
+
+    Options:
+      --refresh: Force cache refresh even if valid (use when you need fresh data now)
+      --no-cache: Skip caching entirely - always recompute (useful for testing/debugging)
+      --json: Output in JSON format for automation/scripting
+
+    Examples:
+      deltaglider stats mybucket                    # Fast (~0.1s with cache, ~0.5s without)
+      deltaglider stats mybucket --sampled          # Balanced accuracy/speed (~5-15s first run)
+      deltaglider stats mybucket --detailed         # Most accurate (~1-10min first run, ~0.1s cached)
+      deltaglider stats mybucket --refresh          # Force recomputation even if cached
+      deltaglider stats mybucket --no-cache         # Always compute fresh (skip cache)
+      deltaglider stats mybucket --json             # JSON output for scripts
+      deltaglider stats s3://mybucket/              # Also accepts s3:// URLs
+
+    Timing Logs:
+      Set DG_LOG_LEVEL=INFO to see detailed phase timing with timestamps:
+        [HH:MM:SS.mmm] Phase 1: LIST completed in 0.52s - Found 1523 objects
+        [HH:MM:SS.mmm] Phase 2: Cache HIT in 0.06s - Using cached stats
+        [HH:MM:SS.mmm] COMPLETE: Total time 0.58s
+
+    See docs/STATS_CACHING.md for complete documentation.
     """
     from ...client import DeltaGliderClient
+    from ...client_operations.stats import StatsMode
 
     try:
         # Parse bucket from S3 URL if needed
-        if bucket.startswith("s3://"):
-            # Remove s3:// prefix and any trailing slashes
-            bucket = bucket[5:].rstrip("/")
-            # Extract just the bucket name (first path component)
-            bucket = bucket.split("/")[0] if "/" in bucket else bucket
+        if is_s3_path(bucket):
+            bucket, _prefix = parse_s3_url(bucket)
 
         if not bucket:
             click.echo("Error: Invalid bucket name", err=True)
             sys.exit(1)
 
+        if sampled and detailed:
+            click.echo("Error: --sampled and --detailed cannot be used together", err=True)
+            sys.exit(1)
+
+        if refresh and no_cache:
+            click.echo("Error: --refresh and --no-cache cannot be used together", err=True)
+            sys.exit(1)
+
+        mode: StatsMode = "quick"
+        if sampled:
+            mode = "sampled"
+        if detailed:
+            mode = "detailed"
+
         # Create client from service
         client = DeltaGliderClient(service=service)
 
-        # Get bucket stats
-        bucket_stats = client.get_bucket_stats(bucket, detailed_stats=detailed)
+        # Get bucket stats with caching control
+        use_cache = not no_cache
+        bucket_stats = client.get_bucket_stats(
+            bucket, mode=mode, use_cache=use_cache, refresh_cache=refresh
+        )
 
         if output_json:
             # JSON output
