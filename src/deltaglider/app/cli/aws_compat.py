@@ -523,18 +523,19 @@ def migrate_s3_to_s3(
             if len(failed_files) > 10:
                 click.echo(f"    ... and {len(failed_files) - 10} more failures")
 
-        # Show compression statistics if available and delta was used
+        # Show compression statistics from cache if available (no bucket scan)
         if successful > 0 and not no_delta:
             try:
                 from ...client import DeltaGliderClient
 
                 client = DeltaGliderClient(service)
-                dest_stats = client.get_bucket_stats(dest_bucket, detailed_stats=False)
-                if dest_stats.delta_objects > 0:
+                # Use cached stats only - don't scan bucket (prevents blocking)
+                cached_stats = client._get_cached_bucket_stats(dest_bucket, detailed_stats=False)
+                if cached_stats and cached_stats.delta_objects > 0:
                     click.echo(
-                        f"\nCompression achieved: {dest_stats.average_compression_ratio:.1%}"
+                        f"\nCompression achieved: {cached_stats.average_compression_ratio:.1%}"
                     )
-                    click.echo(f"Space saved: {format_bytes(dest_stats.space_saved)}")
+                    click.echo(f"Space saved: {format_bytes(cached_stats.space_saved)}")
             except Exception:
                 pass  # Ignore stats errors
 
