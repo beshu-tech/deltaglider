@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from . import __version__
 from .adapters.storage_s3 import S3StorageAdapter
 from .client_delete_helpers import delete_with_delta_suffix
 from .client_models import (
@@ -1325,8 +1326,8 @@ def create_client(
     logger = StdLoggerAdapter(level=log_level)
     metrics = NoopMetricsAdapter()
 
-    # Get default values
-    tool_version = kwargs.pop("tool_version", "deltaglider/5.0.0")
+    # Get default values (use real package version)
+    tool_version = kwargs.pop("tool_version", f"deltaglider/{__version__}")
     max_ratio = kwargs.pop("max_ratio", 0.5)
 
     # Create service

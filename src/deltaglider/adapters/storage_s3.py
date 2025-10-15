@@ -1,5 +1,6 @@
 """S3 storage adapter."""
 
+import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -8,10 +9,12 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Optional
 import boto3
 from botocore.exceptions import ClientError
 
+from ..ports.storage import ObjectHead, PutResult, StoragePort
+
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
-
-from ..ports.storage import ObjectHead, PutResult, StoragePort
 
 
 class S3StorageAdapter(StoragePort):
@@ -55,12 +58,21 @@ class S3StorageAdapter(StoragePort):
 
         try:
             response = self.client.head_object(Bucket=bucket, Key=object_key)
+            extracted_metadata = self._extract_metadata(response.get("Metadata", {}))
+
+            # Debug: Log metadata received (to verify it's stored correctly)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"HEAD {object_key}: Received metadata with {len(extracted_metadata)} keys: "
+                    f"{list(extracted_metadata.keys())}"
+                )
+
             return ObjectHead(
                 key=object_key,
                 size=response["ContentLength"],
                 etag=response["ETag"].strip('"'),
                 last_modified=response["LastModified"],
-                metadata=self._extract_metadata(response.get("Metadata", {})),
+                metadata=extracted_metadata,
             )
         except ClientError as e:
             if e.response["Error"]["Code"] == "404":
@@ -197,6 +209,22 @@ class S3StorageAdapter(StoragePort):
         # AWS requires lowercase metadata keys
         clean_metadata = {k.lower(): v for k, v in metadata.items()}
 
+        # Calculate total metadata size (AWS has 2KB limit)
+        total_metadata_size = sum(len(k) + len(v) for k, v in clean_metadata.items())
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"PUT {object_key}: Sending metadata with {len(clean_metadata)} keys "
+                f"({total_metadata_size} bytes): {list(clean_metadata.keys())}"
+            )
+
+        # Warn if approaching AWS metadata size limit (2KB per key, 2KB total for user metadata)
+        if total_metadata_size > 1800:  # Warn at 1.8KB
+            logger.warning(
+                f"PUT {object_key}: Metadata size ({total_metadata_size} bytes) approaching "
+                f"AWS S3 limit (2KB). Some metadata may be lost!"
+            )
+
         try:
             response = self.client.put_object(
                 Bucket=bucket,
@@ -205,6 +233,33 @@ class S3StorageAdapter(StoragePort):
                 ContentType=content_type,
                 Metadata=clean_metadata,
             )
+
+            # VERIFICATION: Check if metadata was actually stored (especially for delta files)
+            if object_key.endswith(".delta") and clean_metadata:
+                try:
+                    # Verify metadata was stored by doing a HEAD immediately
+                    verify_response = self.client.head_object(Bucket=bucket, Key=object_key)
+                    stored_metadata = verify_response.get("Metadata", {})
+
+                    if not stored_metadata:
+                        logger.error(
+                            f"PUT {object_key}: CRITICAL - Metadata was sent but NOT STORED! "
+                            f"Sent {len(clean_metadata)} keys, received 0 keys back."
+                        )
+                    elif len(stored_metadata) < len(clean_metadata):
+                        missing_keys = set(clean_metadata.keys()) - set(stored_metadata.keys())
+                        logger.warning(
+                            f"PUT {object_key}: Metadata partially stored. "
+                            f"Sent {len(clean_metadata)} keys, stored {len(stored_metadata)} keys. "
+                            f"Missing keys: {missing_keys}"
+                        )
+                    elif logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"PUT {object_key}: Metadata verified - all {len(clean_metadata)} keys stored"
+                        )
+                except Exception as e:
+                    logger.warning(f"PUT {object_key}: Could not verify metadata: {e}")
+
             return PutResult(
                 etag=response["ETag"].strip('"'),
                 version_id=response.get("VersionId"),

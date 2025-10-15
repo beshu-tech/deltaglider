@@ -81,11 +81,11 @@ class TestBucketStatsAlgorithm:
         def mock_head(path):
             if "file1.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "19500000", "compression_ratio": "0.997"}
+                head.metadata = {"dg-file-size": "19500000", "compression_ratio": "0.997"}
                 return head
             elif "file2.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "19600000", "compression_ratio": "0.997"}
+                head.metadata = {"dg-file-size": "19600000", "compression_ratio": "0.997"}
                 return head
             return None
 
@@ -153,11 +153,11 @@ class TestBucketStatsAlgorithm:
         def mock_head(path):
             if "v1.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "19500000"}
+                head.metadata = {"dg-file-size": "19500000"}
                 return head
             elif "v2.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "19600000"}
+                head.metadata = {"dg-file-size": "19600000"}
                 return head
             return None
 
@@ -218,11 +218,11 @@ class TestBucketStatsAlgorithm:
         def mock_head(path):
             if "pro/v1.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "19500000"}
+                head.metadata = {"dg-file-size": "19500000"}
                 return head
             elif "enterprise/v1.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "24500000"}
+                head.metadata = {"dg-file-size": "24500000"}
                 return head
             return None
 
@@ -273,7 +273,7 @@ class TestBucketStatsAlgorithm:
         assert mock_client.service.storage.list_objects.call_count == 2
 
     def test_delta_file_without_metadata(self, mock_client):
-        """Test handling of delta files with missing metadata."""
+        """Test handling of delta files with missing metadata in quick mode."""
         # Setup: Delta file without metadata
         mock_client.service.storage.list_objects.return_value = {
             "objects": [
@@ -283,21 +283,22 @@ class TestBucketStatsAlgorithm:
             "is_truncated": False,
         }
 
-        # No metadata available
+        # No metadata available (quick mode doesn't fetch metadata)
         mock_client.service.storage.head.return_value = None
 
-        # Execute
-        stats = get_bucket_stats(mock_client, "no-metadata-bucket")
+        # Execute in quick mode (default)
+        stats = get_bucket_stats(mock_client, "no-metadata-bucket", mode="quick")
 
-        # Verify - falls back to using delta size as original size
+        # Verify - without metadata, original size cannot be calculated
         assert stats.object_count == 1
-        assert stats.total_size == 50000  # Falls back to delta size
+        assert stats.total_size == 0  # Cannot calculate without metadata
         assert stats.compressed_size == 20050000  # reference + delta
+        assert stats.space_saved == 0  # Cannot calculate without metadata
         assert stats.delta_objects == 1
 
-        # Verify warning was logged
+        # Verify warning was logged about incomplete stats in quick mode
         warning_calls = mock_client.service.logger.warning.call_args_list
-        assert any("no original_size" in str(call) for call in warning_calls)
+        assert any("Quick mode cannot calculate" in str(call) for call in warning_calls)
 
     def test_parallel_metadata_fetching(self, mock_client):
         """Test that metadata is fetched in parallel for performance."""
@@ -323,7 +324,7 @@ class TestBucketStatsAlgorithm:
         # Mock metadata
         def mock_head(path):
             head = Mock()
-            head.metadata = {"file_size": "19500000"}
+            head.metadata = {"dg-file-size": "19500000"}
             return head
 
         mock_client.service.storage.head.side_effect = mock_head
@@ -337,7 +338,7 @@ class TestBucketStatsAlgorithm:
             futures = []
             for i in range(num_deltas):
                 future = Mock()
-                future.result.return_value = (f"file{i}.zip.delta", {"file_size": "19500000"})
+                future.result.return_value = (f"file{i}.zip.delta", {"dg-file-size": "19500000"})
                 futures.append(future)
 
             mock_pool.submit.side_effect = futures
@@ -366,9 +367,9 @@ class TestBucketStatsAlgorithm:
         }
 
         metadata_by_key = {
-            "alpha/file1.zip.delta": {"file_size": "100", "compression_ratio": "0.9"},
-            "alpha/file2.zip.delta": {"file_size": "120", "compression_ratio": "0.88"},
-            "beta/file1.zip.delta": {"file_size": "210", "compression_ratio": "0.9"},
+            "alpha/file1.zip.delta": {"dg-file-size": "100", "compression_ratio": "0.9"},
+            "alpha/file2.zip.delta": {"dg-file-size": "120", "compression_ratio": "0.88"},
+            "beta/file1.zip.delta": {"dg-file-size": "210", "compression_ratio": "0.9"},
         }
 
         def mock_head(path: str):
@@ -417,7 +418,7 @@ class TestBucketStatsAlgorithm:
                 raise Exception("S3 error")
             elif "file2.zip.delta" in path:
                 head = Mock()
-                head.metadata = {"file_size": "19600000"}
+                head.metadata = {"dg-file-size": "19600000"}
                 return head
             return None
 
@@ -426,11 +427,16 @@ class TestBucketStatsAlgorithm:
         # Execute - should handle error gracefully
         stats = get_bucket_stats(mock_client, "error-bucket", mode="detailed")
 
-        # Verify - file1 uses fallback, file2 uses metadata
+        # Verify - file1 has no metadata (error), file2 uses metadata
         assert stats.object_count == 2
         assert stats.delta_objects == 2
-        # file1 falls back to delta size (50000), file2 uses metadata (19600000)
-        assert stats.total_size == 50000 + 19600000
+        # file1 has no metadata so not counted in original size, file2 uses metadata (19600000)
+        assert stats.total_size == 19600000
+
+        # Verify warning was logged for file1
+        warning_calls = mock_client.service.logger.warning.call_args_list
+        assert any("file1.zip.delta" in str(call) and "no original_size metadata" in str(call)
+                   for call in warning_calls)
 
     def test_multiple_orphaned_references(self, mock_client):
         """Test detection of multiple orphaned reference.bin files."""

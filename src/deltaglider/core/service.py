@@ -5,6 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from .. import __version__
 from ..ports import (
     CachePort,
     ClockPort,
@@ -49,10 +50,17 @@ class DeltaService:
         clock: ClockPort,
         logger: LoggerPort,
         metrics: MetricsPort,
-        tool_version: str = "deltaglider/0.1.0",
+        tool_version: str | None = None,
         max_ratio: float = 0.5,
     ):
-        """Initialize service with ports."""
+        """Initialize service with ports.
+
+        Args:
+            tool_version: Version string for metadata. If None, uses package __version__.
+        """
+        # Use real package version if not explicitly provided
+        if tool_version is None:
+            tool_version = f"deltaglider/{__version__}"
         self.storage = storage
         self.diff = diff
         self.hasher = hasher
@@ -166,8 +174,8 @@ class DeltaService:
             raise NotFoundError(f"Object not found: {object_key.key}")
 
         # Check if this is a regular S3 object (not uploaded via DeltaGlider)
-        # Regular S3 objects won't have DeltaGlider metadata
-        if "file_sha256" not in obj_head.metadata:
+        # Regular S3 objects won't have DeltaGlider metadata (dg-file-sha256 key)
+        if "dg-file-sha256" not in obj_head.metadata:
             # This is a regular S3 object, download it directly
             self.logger.info(
                 "Downloading regular S3 object (no DeltaGlider metadata)",
@@ -333,10 +341,10 @@ class DeltaService:
 
         # Re-check for race condition
         ref_head = self.storage.head(full_ref_key)
-        if ref_head and ref_head.metadata.get("file_sha256") != file_sha256:
+        if ref_head and ref_head.metadata.get("dg-file-sha256") != file_sha256:
             self.logger.warning("Reference creation race detected, using existing")
             # Proceed with existing reference
-            ref_sha256 = ref_head.metadata["file_sha256"]
+            ref_sha256 = ref_head.metadata["dg-file-sha256"]
         else:
             ref_sha256 = file_sha256
 
@@ -399,7 +407,7 @@ class DeltaService:
     ) -> PutSummary:
         """Create delta file."""
         ref_key = delta_space.reference_key()
-        ref_sha256 = ref_head.metadata["file_sha256"]
+        ref_sha256 = ref_head.metadata["dg-file-sha256"]
 
         # Ensure reference is cached
         cache_hit = self.cache.has_ref(delta_space.bucket, delta_space.prefix, ref_sha256)

@@ -50,10 +50,10 @@ class TestDeltaServicePut:
         ref_sha = service.hasher.sha256(io.BytesIO(ref_content))
 
         ref_metadata = {
-            "tool": "deltaglider/0.1.0",
-            "source_name": "original.zip",
-            "file_sha256": ref_sha,
-            "created_at": "2025-01-01T00:00:00Z",
+            "dg-tool": "deltaglider/0.1.0",
+            "dg-source-name": "original.zip",
+            "dg-file-sha256": ref_sha,
+            "dg-created-at": "2025-01-01T00:00:00Z",
         }
         mock_storage.head.return_value = ObjectHead(
             key="test/prefix/reference.bin",
@@ -98,7 +98,7 @@ class TestDeltaServicePut:
         ref_sha = service.hasher.sha256(io.BytesIO(ref_content))
 
         ref_metadata = {
-            "file_sha256": ref_sha,
+            "dg-file-sha256": ref_sha,
         }
         mock_storage.head.return_value = ObjectHead(
             key="test/prefix/reference.bin",
@@ -200,15 +200,15 @@ class TestDeltaServiceVerify:
         ref_sha = service.hasher.sha256(io.BytesIO(ref_content))
 
         delta_metadata = {
-            "tool": "deltaglider/0.1.0",
-            "original_name": "file.zip",
-            "file_sha256": test_sha,
-            "file_size": str(len(test_content)),
-            "created_at": "2025-01-01T00:00:00Z",
-            "ref_key": "test/reference.bin",
-            "ref_sha256": ref_sha,
-            "delta_size": "100",
-            "delta_cmd": "xdelta3 -e -9 -s reference.bin file.zip file.zip.delta",
+            "dg-tool": "deltaglider/0.1.0",
+            "dg-original-name": "file.zip",
+            "dg-file-sha256": test_sha,
+            "dg-file-size": str(len(test_content)),
+            "dg-created-at": "2025-01-01T00:00:00Z",
+            "dg-ref-key": "test/reference.bin",
+            "dg-ref-sha256": ref_sha,
+            "dg-delta-size": "100",
+            "dg-delta-cmd": "xdelta3 -e -9 -s reference.bin file.zip file.zip.delta",
         }
         mock_storage.head.return_value = ObjectHead(
             key="test/file.zip.delta",

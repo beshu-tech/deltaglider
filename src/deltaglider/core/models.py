@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+# Metadata key prefix for DeltaGlider
+# AWS S3 automatically adds 'x-amz-meta-' prefix, so our keys become 'x-amz-meta-dg-*'
+METADATA_PREFIX = "dg-"
+
 
 @dataclass(frozen=True)
 class DeltaSpace:
@@ -47,13 +51,13 @@ class ReferenceMeta:
     note: str = "reference"
 
     def to_dict(self) -> dict[str, str]:
-        """Convert to S3 metadata dict."""
+        """Convert to S3 metadata dict with DeltaGlider namespace prefix."""
         return {
-            "tool": self.tool,
-            "source_name": self.source_name,
-            "file_sha256": self.file_sha256,
-            "created_at": self.created_at.isoformat() + "Z",
-            "note": self.note,
+            f"{METADATA_PREFIX}tool": self.tool,
+            f"{METADATA_PREFIX}source-name": self.source_name,
+            f"{METADATA_PREFIX}file-sha256": self.file_sha256,
+            f"{METADATA_PREFIX}created-at": self.created_at.isoformat() + "Z",
+            f"{METADATA_PREFIX}note": self.note,
         }
 
 
@@ -73,36 +77,36 @@ class DeltaMeta:
     note: str | None = None
 
     def to_dict(self) -> dict[str, str]:
-        """Convert to S3 metadata dict."""
+        """Convert to S3 metadata dict with DeltaGlider namespace prefix."""
         meta = {
-            "tool": self.tool,
-            "original_name": self.original_name,
-            "file_sha256": self.file_sha256,
-            "file_size": str(self.file_size),
-            "created_at": self.created_at.isoformat() + "Z",
-            "ref_key": self.ref_key,
-            "ref_sha256": self.ref_sha256,
-            "delta_size": str(self.delta_size),
-            "delta_cmd": self.delta_cmd,
+            f"{METADATA_PREFIX}tool": self.tool,
+            f"{METADATA_PREFIX}original-name": self.original_name,
+            f"{METADATA_PREFIX}file-sha256": self.file_sha256,
+            f"{METADATA_PREFIX}file-size": str(self.file_size),
+            f"{METADATA_PREFIX}created-at": self.created_at.isoformat() + "Z",
+            f"{METADATA_PREFIX}ref-key": self.ref_key,
+            f"{METADATA_PREFIX}ref-sha256": self.ref_sha256,
+            f"{METADATA_PREFIX}delta-size": str(self.delta_size),
+            f"{METADATA_PREFIX}delta-cmd": self.delta_cmd,
         }
         if self.note:
-            meta["note"] = self.note
+            meta[f"{METADATA_PREFIX}note"] = self.note
         return meta
 
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> "DeltaMeta":
-        """Create from S3 metadata dict."""
+        """Create from S3 metadata dict with DeltaGlider namespace prefix."""
         return cls(
-            tool=data["tool"],
-            original_name=data["original_name"],
-            file_sha256=data["file_sha256"],
-            file_size=int(data["file_size"]),
-            created_at=datetime.fromisoformat(data["created_at"].rstrip("Z")),
-            ref_key=data["ref_key"],
-            ref_sha256=data["ref_sha256"],
-            delta_size=int(data["delta_size"]),
-            delta_cmd=data["delta_cmd"],
-            note=data.get("note"),
+            tool=data[f"{METADATA_PREFIX}tool"],
+            original_name=data[f"{METADATA_PREFIX}original-name"],
+            file_sha256=data[f"{METADATA_PREFIX}file-sha256"],
+            file_size=int(data[f"{METADATA_PREFIX}file-size"]),
+            created_at=datetime.fromisoformat(data[f"{METADATA_PREFIX}created-at"].rstrip("Z")),
+            ref_key=data[f"{METADATA_PREFIX}ref-key"],
+            ref_sha256=data[f"{METADATA_PREFIX}ref-sha256"],
+            delta_size=int(data[f"{METADATA_PREFIX}delta-size"]),
+            delta_cmd=data[f"{METADATA_PREFIX}delta-cmd"],
+            note=data.get(f"{METADATA_PREFIX}note"),
         )
 
 

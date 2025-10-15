@@ -304,7 +304,9 @@ def _build_object_info_list(
 
         # Parse compression ratio and original size
         compression_ratio = 0.0
-        original_size = size
+        # For delta files without metadata, set original_size to None to indicate unknown
+        # This prevents nonsensical stats like "693 bytes compressed to 82MB"
+        original_size = None if is_delta else size
 
         if is_delta and metadata:
             try:
@@ -314,22 +316,24 @@ def _build_object_info_list(
                 compression_ratio = 0.0
 
             try:
-                if "file_size" in metadata:
-                    original_size = int(metadata["file_size"])
-                    logger.debug(f"Delta {key}: using original_size={original_size} from metadata")
+                if "dg-file-size" in metadata:
+                    original_size = int(metadata["dg-file-size"])
+                    logger.debug(
+                        f"Delta {key}: using original_size={original_size} from metadata['dg-file-size']"
+                    )
                 else:
                     logger.warning(
-                        f"Delta {key}: metadata missing 'file_size' key. "
+                        f"Delta {key}: metadata missing 'dg-file-size' key. "
                         f"Available keys: {list(metadata.keys())}. "
-                        f"Using compressed size={size} as fallback"
+                        f"Using None as original_size (unknown)"
                     )
-                    original_size = size
+                    original_size = None
             except (ValueError, TypeError) as e:
                 logger.warning(
-                    f"Delta {key}: failed to parse file_size from metadata: {e}. "
-                    f"Using compressed size={size} as fallback"
+                    f"Delta {key}: failed to parse dg-file-size from metadata: {e}. "
+                    f"Using None as original_size (unknown)"
                 )
-                original_size = size
+                original_size = None
 
         all_objects.append(
             ObjectInfo(
@@ -353,6 +357,7 @@ def _calculate_bucket_statistics(
     all_objects: list[ObjectInfo],
     bucket: str,
     logger: Any,
+    mode: StatsMode = "quick",
 ) -> BucketStats:
     """Calculate statistics from ObjectInfo list.
 
@@ -360,6 +365,7 @@ def _calculate_bucket_statistics(
         all_objects: List of ObjectInfo objects
         bucket: Bucket name for stats
         logger: Logger instance
+        mode: Stats mode (quick, sampled, or detailed) - controls warning behavior
 
     Returns:
         BucketStats object
@@ -387,21 +393,22 @@ def _calculate_bucket_statistics(
             continue
 
         if obj.is_delta:
-            # Delta: use original_size if available, otherwise compressed size
-            if obj.original_size and obj.original_size != obj.size:
+            # Delta: use original_size if available
+            if obj.original_size is not None:
                 logger.debug(f"Delta {obj.key}: using original_size={obj.original_size}")
                 total_original_size += obj.original_size
             else:
-                # This warning should only appear if metadata is missing or incomplete
-                # If you see this, the delta file may have been uploaded with an older
-                # version of DeltaGlider or the upload was incomplete
-                logger.warning(
-                    f"Delta {obj.key}: no original_size metadata "
-                    f"(original_size={obj.original_size}, size={obj.size}). "
-                    f"Using compressed size as fallback. "
-                    f"This may undercount space savings."
-                )
-                total_original_size += obj.size
+                # original_size is None - metadata not available
+                # In quick mode, this is expected (no HEAD requests)
+                # In sampled/detailed mode, this means metadata is genuinely missing
+                if mode != "quick":
+                    logger.warning(
+                        f"Delta {obj.key}: no original_size metadata available. "
+                        f"Cannot calculate original size without metadata. "
+                        f"Use --detailed mode for accurate stats."
+                    )
+                # Don't add anything to total_original_size for deltas without metadata
+                # This prevents nonsensical stats
             total_compressed_size += obj.size
         else:
             # Direct files: original = compressed
@@ -421,8 +428,22 @@ def _calculate_bucket_statistics(
         _log_orphaned_references(bucket, reference_files, total_reference_size, logger)
 
     # Calculate final metrics
-    space_saved = total_original_size - total_compressed_size
-    avg_ratio = (space_saved / total_original_size) if total_original_size > 0 else 0.0
+    # If we couldn't calculate original size (quick mode with deltas), set space_saved to 0
+    # to avoid nonsensical negative numbers
+    if total_original_size == 0 and total_compressed_size > 0:
+        space_saved = 0
+        avg_ratio = 0.0
+    else:
+        space_saved = total_original_size - total_compressed_size
+        avg_ratio = (space_saved / total_original_size) if total_original_size > 0 else 0.0
+
+    # Warn if quick mode with delta files (stats will be incomplete)
+    if mode == "quick" and delta_count > 0 and total_original_size == 0:
+        logger.warning(
+            f"Quick mode cannot calculate original size for delta files (no metadata fetched). "
+            f"Stats show {delta_count} delta file(s) with unknown original size. "
+            f"Use --detailed for accurate compression metrics."
+        )
 
     return BucketStats(
         bucket=bucket,
@@ -736,7 +757,7 @@ def get_bucket_stats(
 
         # Phase 7: Calculate final statistics
         phase7_start = time.time()
-        stats = _calculate_bucket_statistics(all_objects, bucket, client.service.logger)
+        stats = _calculate_bucket_statistics(all_objects, bucket, client.service.logger, mode)
         phase7_duration = time.time() - phase7_start
         client.service.logger.info(
             f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 7: Statistics calculated in {phase7_duration:.3f}s - "
