@@ -1,14 +1,16 @@
 """Core domain models."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 
 # Metadata key prefix for DeltaGlider
 # AWS S3 automatically adds 'x-amz-meta-' prefix, so our keys become 'x-amz-meta-dg-*'
 METADATA_PREFIX = "dg-"
 
+
 logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class DeltaSpace:
@@ -102,7 +104,9 @@ class DeltaMeta:
         delta_cmd_value = data.get(delta_cmd_key)
         if delta_cmd_value is None:
             object_name = data.get(f"{METADATA_PREFIX}original-name", "<unknown>")
-            logger.warning("Delta metadata missing %s for %s; using empty command", delta_cmd_key, object_name)
+            logger.warning(
+                "Delta metadata missing %s for %s; using empty command", delta_cmd_key, object_name
+            )
             delta_cmd_value = ""
         return cls(
             tool=data[f"{METADATA_PREFIX}tool"],
