@@ -138,7 +138,9 @@ class TestSyncCommand:
                 return PutSummary(
                     operation="create_reference",
                     bucket="test-bucket",
-                    key=f"{delta_space.prefix}/{local_path.name}.delta" if delta_space.prefix else f"{local_path.name}.delta",
+                    key=f"{delta_space.prefix}/{local_path.name}.delta"
+                    if delta_space.prefix
+                    else f"{local_path.name}.delta",
                     original_name=local_path.name,
                     file_size=local_path.stat().st_size,
                     file_sha256="ghi789",
@@ -146,6 +148,7 @@ class TestSyncCommand:
                     delta_ratio=None,
                     ref_key=None,
                 )
+
             mock_service.put.side_effect = mock_put
 
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):

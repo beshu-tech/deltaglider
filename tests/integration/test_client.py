@@ -43,7 +43,15 @@ class MockStorage:
                 if obj_head is not None:
                     yield obj_head
 
-    def list_objects(self, bucket, prefix="", delimiter="", max_keys=1000, start_after=None, continuation_token=None):
+    def list_objects(
+        self,
+        bucket,
+        prefix="",
+        delimiter="",
+        max_keys=1000,
+        start_after=None,
+        continuation_token=None,
+    ):
         """Mock list_objects operation for S3 features."""
         objects = []
         common_prefixes = set()

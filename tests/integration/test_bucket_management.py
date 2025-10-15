@@ -255,7 +255,9 @@ class TestBucketManagement:
 
         call_count = {"value": 0}
 
-        def fake_get_bucket_stats(_: Any, bucket: str, mode: str, use_cache: bool = True, refresh_cache: bool = False) -> BucketStats:
+        def fake_get_bucket_stats(
+            _: Any, bucket: str, mode: str, use_cache: bool = True, refresh_cache: bool = False
+        ) -> BucketStats:
             call_count["value"] += 1
             assert bucket == "bucket1"
             if mode == "detailed":
