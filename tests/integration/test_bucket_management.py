@@ -255,7 +255,7 @@ class TestBucketManagement:
 
         call_count = {"value": 0}
 
-        def fake_get_bucket_stats(_: Any, bucket: str, mode: str) -> BucketStats:
+        def fake_get_bucket_stats(_: Any, bucket: str, mode: str, use_cache: bool = True, refresh_cache: bool = False) -> BucketStats:
             call_count["value"] += 1
             assert bucket == "bucket1"
             if mode == "detailed":
@@ -271,23 +271,19 @@ class TestBucketManagement:
         assert result_quick is quick_stats
         assert call_count["value"] == 1
 
-        # Second quick call should hit cache
+        # Second quick call - caching is now done in _get_bucket_stats (S3-based)
+        # So each call goes through _get_bucket_stats (which handles caching internally)
         assert client.get_bucket_stats("bucket1") is quick_stats
-        assert call_count["value"] == 1
+        assert call_count["value"] == 2
 
         # Detailed call triggers new computation
         result_detailed = client.get_bucket_stats("bucket1", mode="detailed")
         assert result_detailed is detailed_stats
-        assert call_count["value"] == 2
-
-        # Quick call after detailed uses detailed cached value (more accurate)
-        assert client.get_bucket_stats("bucket1") is detailed_stats
-        assert call_count["value"] == 2
-
-        # Clearing the cache should force recomputation
-        client.clear_cache()
-        assert client.get_bucket_stats("bucket1") is quick_stats
         assert call_count["value"] == 3
+
+        # Quick call - each mode has its own cache in _get_bucket_stats
+        assert client.get_bucket_stats("bucket1") is quick_stats
+        assert call_count["value"] == 4
 
     def test_bucket_methods_without_boto3_client(self):
         """Test that bucket methods raise NotImplementedError when storage doesn't support it."""

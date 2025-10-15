@@ -130,17 +130,23 @@ class TestSyncCommand:
 
             # Mock service methods
             mock_service.storage.list.return_value = []  # No existing files
-            mock_service.put.return_value = PutSummary(
-                operation="create_reference",
-                bucket="test-bucket",
-                key="backup/file.zip.delta",
-                original_name="file.zip",
-                file_size=8,
-                file_sha256="ghi789",
-                delta_size=None,
-                delta_ratio=None,
-                ref_key=None,
-            )
+            # Mock list_objects to raise NotImplementedError so it falls back to list()
+            mock_service.storage.list_objects.side_effect = NotImplementedError()
+
+            # Mock service.put to avoid actual execution
+            def mock_put(local_path, delta_space, max_ratio=None):
+                return PutSummary(
+                    operation="create_reference",
+                    bucket="test-bucket",
+                    key=f"{delta_space.prefix}/{local_path.name}.delta" if delta_space.prefix else f"{local_path.name}.delta",
+                    original_name=local_path.name,
+                    file_size=local_path.stat().st_size,
+                    file_sha256="ghi789",
+                    delta_size=None,
+                    delta_ratio=None,
+                    ref_key=None,
+                )
+            mock_service.put.side_effect = mock_put
 
             with patch("deltaglider.app.cli.main.create_service", return_value=mock_service):
                 result = runner.invoke(cli, ["sync", str(test_dir), "s3://test-bucket/backup/"])
@@ -175,6 +181,8 @@ class TestSyncCommand:
                     metadata={},
                 ),
             ]
+            # Mock list_objects to raise NotImplementedError so it falls back to list()
+            mock_service.storage.list_objects.side_effect = NotImplementedError()
             mock_service.storage.head.side_effect = [
                 None,  # file1.zip doesn't exist
                 Mock(),  # file1.zip.delta exists

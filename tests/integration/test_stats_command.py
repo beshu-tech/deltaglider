@@ -49,7 +49,7 @@ class TestStatsCommand:
             assert output["direct_objects"] == 3
 
             # Verify client was called correctly
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick", use_cache=True, refresh_cache=False)
 
     def test_stats_json_output_detailed(self):
         """Test stats command with detailed JSON output."""
@@ -77,7 +77,7 @@ class TestStatsCommand:
             assert output["average_compression_ratio"] == 0.95
 
             # Verify detailed flag was passed
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="detailed")
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="detailed", use_cache=True, refresh_cache=False)
 
     def test_stats_json_output_sampled(self):
         """Test stats command with sampled JSON output."""
@@ -101,7 +101,7 @@ class TestStatsCommand:
             result = runner.invoke(cli, ["stats", "test-bucket", "--sampled", "--json"])
 
             assert result.exit_code == 0
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="sampled")
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="sampled", use_cache=True, refresh_cache=False)
 
     def test_stats_sampled_and_detailed_conflict(self):
         """--sampled and --detailed flags must be mutually exclusive."""
@@ -190,7 +190,7 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify bucket name was parsed correctly from S3 URL
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick", use_cache=True, refresh_cache=False)
 
     def test_stats_with_s3_url_trailing_slash(self):
         """Test stats command with s3:// URL format with trailing slash."""
@@ -215,7 +215,7 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify bucket name was parsed correctly from S3 URL with trailing slash
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick", use_cache=True, refresh_cache=False)
 
     def test_stats_with_s3_url_with_prefix(self):
         """Test stats command with s3:// URL format with prefix (should ignore prefix)."""
@@ -240,4 +240,4 @@ class TestStatsCommand:
 
             assert result.exit_code == 0
             # Verify only bucket name was extracted, prefix ignored
-            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick")
+            mock_client.get_bucket_stats.assert_called_once_with("test-bucket", mode="quick", use_cache=True, refresh_cache=False)
