@@ -435,8 +435,10 @@ class TestBucketStatsAlgorithm:
 
         # Verify warning was logged for file1
         warning_calls = mock_client.service.logger.warning.call_args_list
-        assert any("file1.zip.delta" in str(call) and "no original_size metadata" in str(call)
-                   for call in warning_calls)
+        assert any(
+            "file1.zip.delta" in str(call) and "no original_size metadata" in str(call)
+            for call in warning_calls
+        )
 
     def test_multiple_orphaned_references(self, mock_client):
         """Test detection of multiple orphaned reference.bin files."""
