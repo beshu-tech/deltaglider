@@ -18,6 +18,7 @@ class ObjectListing:
     key_count: int = 0
     is_truncated: bool = False
     next_continuation_token: str | None = None
+    limit_reached: bool = False
 
 
 def list_objects_page(
@@ -61,6 +62,7 @@ def list_all_objects(
     max_keys: int = 1000,
     logger: Any | None = None,
     max_iterations: int = 10_000,
+    max_objects: int | None = None,
 ) -> ObjectListing:
     """Fetch all objects under the given bucket/prefix with pagination safety."""
     import time
@@ -70,6 +72,7 @@ def list_all_objects(
     continuation_token: str | None = None
     iteration_count = 0
     list_start_time = time.time()
+    limit_reached = False
 
     while True:
         iteration_count += 1
@@ -130,6 +133,18 @@ def list_all_objects(
         aggregated.common_prefixes.extend(page.common_prefixes)
         aggregated.key_count += page.key_count
 
+        if max_objects is not None and len(aggregated.objects) >= max_objects:
+            if logger:
+                logger.info(
+                    f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}]   LIST capped at {max_objects} objects."
+                )
+            aggregated.objects = aggregated.objects[:max_objects]
+            aggregated.key_count = len(aggregated.objects)
+            aggregated.is_truncated = True
+            aggregated.next_continuation_token = page.next_continuation_token
+            limit_reached = True
+            break
+
         if not page.is_truncated:
             aggregated.is_truncated = False
             aggregated.next_continuation_token = None
@@ -161,6 +176,7 @@ def list_all_objects(
                 unique_prefixes.append(prefix)
         aggregated.common_prefixes = unique_prefixes
     aggregated.key_count = len(aggregated.objects)
+    aggregated.limit_reached = limit_reached
     return aggregated
 
 

@@ -26,9 +26,22 @@ StatsMode = Literal["quick", "sampled", "detailed"]
 CACHE_VERSION = "1.0"
 CACHE_PREFIX = ".deltaglider"
 
+# Listing limits (prevent runaway scans on gigantic buckets)
+QUICK_LIST_LIMIT = 10_000
+SAMPLED_LIST_LIMIT = 10_000
+
 # ============================================================================
 # Internal Helper Functions
 # ============================================================================
+
+
+def _first_metadata_value(metadata: dict[str, Any], *keys: str) -> str | None:
+    """Return the first non-empty metadata value matching the provided keys."""
+    for key in keys:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return value
+    return None
 
 
 def _fetch_delta_metadata(
@@ -316,22 +329,25 @@ def _build_object_info_list(
                 compression_ratio = 0.0
 
             try:
-                if "dg-file-size" in metadata:
-                    original_size = int(metadata["dg-file-size"])
-                    logger.debug(
-                        f"Delta {key}: using original_size={original_size} from metadata['dg-file-size']"
-                    )
+                original_size_raw = _first_metadata_value(
+                    metadata,
+                    "dg-file-size",
+                    "dg_file_size",
+                    "file_size",
+                    "file-size",
+                    "deltaglider-original-size",
+                )
+                if original_size_raw is not None:
+                    original_size = int(original_size_raw)
+                    logger.debug(f"Delta {key}: using original_size={original_size} from metadata")
                 else:
                     logger.warning(
-                        f"Delta {key}: metadata missing 'dg-file-size' key. "
-                        f"Available keys: {list(metadata.keys())}. "
-                        f"Using None as original_size (unknown)"
+                        f"Delta {key}: metadata missing file size. Available keys: {list(metadata.keys())}. Using None as original_size (unknown)"
                     )
                     original_size = None
             except (ValueError, TypeError) as e:
                 logger.warning(
-                    f"Delta {key}: failed to parse dg-file-size from metadata: {e}. "
-                    f"Using None as original_size (unknown)"
+                    f"Delta {key}: failed to parse file size from metadata: {e}. Using None as original_size (unknown)"
                 )
                 original_size = None
 
@@ -346,7 +362,13 @@ def _build_object_info_list(
                 compressed_size=size,
                 is_delta=is_delta,
                 compression_ratio=compression_ratio,
-                reference_key=metadata.get("ref_key") if metadata else None,
+                reference_key=_first_metadata_value(
+                    metadata,
+                    "dg-ref-key",
+                    "dg_ref_key",
+                    "ref_key",
+                    "ref-key",
+                ),
             )
         )
 
@@ -434,8 +456,13 @@ def _calculate_bucket_statistics(
         space_saved = 0
         avg_ratio = 0.0
     else:
-        space_saved = total_original_size - total_compressed_size
+        raw_space_saved = total_original_size - total_compressed_size
+        space_saved = raw_space_saved if raw_space_saved > 0 else 0
         avg_ratio = (space_saved / total_original_size) if total_original_size > 0 else 0.0
+        if avg_ratio < 0:
+            avg_ratio = 0.0
+        elif avg_ratio > 1:
+            avg_ratio = 1.0
 
     # Warn if quick mode with delta files (stats will be incomplete)
     if mode == "quick" and delta_count > 0 and total_original_size == 0:
@@ -612,17 +639,24 @@ def get_bucket_stats(
             f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 1: Starting LIST operation for bucket '{bucket}'"
         )
 
+        list_cap = QUICK_LIST_LIMIT if mode == "quick" else SAMPLED_LIST_LIMIT
         listing = list_all_objects(
             client.service.storage,
             bucket=bucket,
             max_keys=1000,
             logger=client.service.logger,
+            max_objects=list_cap,
         )
         raw_objects = listing.objects
 
         # Calculate validation metrics from LIST
         current_object_count = len(raw_objects)
         current_compressed_size = sum(obj["size"] for obj in raw_objects)
+        limit_reached = listing.limit_reached or listing.is_truncated
+        if limit_reached:
+            client.service.logger.info(
+                f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] Phase 1: Listing capped at {list_cap} objects (bucket likely larger)."
+            )
 
         phase1_duration = time.time() - phase1_start
         client.service.logger.info(
@@ -790,6 +824,7 @@ def get_bucket_stats(
             f"[{datetime.now(UTC).strftime('%H:%M:%S.%f')[:-3]}] COMPLETE: Total time {total_duration:.2f}s for bucket '{bucket}' (mode={mode})"
         )
 
+        stats.object_limit_reached = limit_reached
         return stats
 
     except Exception as e:
@@ -807,6 +842,7 @@ def get_bucket_stats(
             average_compression_ratio=0.0,
             delta_objects=0,
             direct_objects=0,
+            object_limit_reached=False,
         )
 
 

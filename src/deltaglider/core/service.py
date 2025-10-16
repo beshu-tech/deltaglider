@@ -38,6 +38,14 @@ from .models import (
 )
 
 
+def _meta_value(metadata: dict[str, str], *keys: str) -> str | None:
+    for key in keys:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
 class DeltaService:
     """Core service for delta operations."""
 
@@ -199,11 +207,19 @@ class DeltaService:
             # Direct download without delta processing
             self._get_direct(object_key, obj_head, out)
             duration = (self.clock.now() - start_time).total_seconds()
+            file_size_meta = _meta_value(
+                obj_head.metadata,
+                "dg-file-size",
+                "dg_file_size",
+                "file_size",
+                "file-size",
+            )
+            file_size_value = int(file_size_meta) if file_size_meta else obj_head.size
             self.logger.log_operation(
                 op="get",
                 key=object_key.key,
                 deltaspace=f"{object_key.bucket}",
-                sizes={"file": int(obj_head.metadata.get("file_size", 0))},
+                sizes={"file": file_size_value},
                 durations={"total": duration},
                 cache_hit=False,
             )
@@ -341,10 +357,19 @@ class DeltaService:
 
         # Re-check for race condition
         ref_head = self.storage.head(full_ref_key)
-        if ref_head and ref_head.metadata.get("dg-file-sha256") != file_sha256:
+        existing_sha = None
+        if ref_head:
+            existing_sha = _meta_value(
+                ref_head.metadata,
+                "dg-file-sha256",
+                "dg_file_sha256",
+                "file_sha256",
+                "file-sha256",
+            )
+        if ref_head and existing_sha and existing_sha != file_sha256:
             self.logger.warning("Reference creation race detected, using existing")
             # Proceed with existing reference
-            ref_sha256 = ref_head.metadata["dg-file-sha256"]
+            ref_sha256 = existing_sha
         else:
             ref_sha256 = file_sha256
 
@@ -407,7 +432,15 @@ class DeltaService:
     ) -> PutSummary:
         """Create delta file."""
         ref_key = delta_space.reference_key()
-        ref_sha256 = ref_head.metadata["dg-file-sha256"]
+        ref_sha256 = _meta_value(
+            ref_head.metadata,
+            "dg-file-sha256",
+            "dg_file_sha256",
+            "file_sha256",
+            "file-sha256",
+        )
+        if not ref_sha256:
+            raise ValueError("Reference metadata missing file SHA256")
 
         # Ensure reference is cached
         cache_hit = self.cache.has_ref(delta_space.bucket, delta_space.prefix, ref_sha256)
@@ -540,7 +573,13 @@ class DeltaService:
                 out.write(chunk)
 
         # Verify integrity if SHA256 is present
-        expected_sha = obj_head.metadata.get("file_sha256")
+        expected_sha = _meta_value(
+            obj_head.metadata,
+            "dg-file-sha256",
+            "dg_file_sha256",
+            "file_sha256",
+            "file-sha256",
+        )
         if expected_sha:
             if isinstance(out, Path):
                 actual_sha = self.hasher.sha256(out)
@@ -561,7 +600,13 @@ class DeltaService:
         self.logger.info(
             "Direct download complete",
             key=object_key.key,
-            size=obj_head.metadata.get("file_size"),
+            size=_meta_value(
+                obj_head.metadata,
+                "dg-file-size",
+                "dg_file_size",
+                "file_size",
+                "file-size",
+            ),
         )
 
     def _upload_direct(

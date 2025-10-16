@@ -97,3 +97,4 @@ class BucketStats:
     average_compression_ratio: float
     delta_objects: int
     direct_objects: int
+    object_limit_reached: bool = False

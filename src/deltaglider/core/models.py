@@ -100,25 +100,75 @@ class DeltaMeta:
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> "DeltaMeta":
         """Create from S3 metadata dict with DeltaGlider namespace prefix."""
-        delta_cmd_key = f"{METADATA_PREFIX}delta-cmd"
-        delta_cmd_value = data.get(delta_cmd_key)
-        if delta_cmd_value is None:
-            object_name = data.get(f"{METADATA_PREFIX}original-name", "<unknown>")
+        def _get_value(*keys: str, required: bool = True) -> str:
+            for key in keys:
+                if key in data and data[key] != "":
+                    return data[key]
+            if required:
+                raise KeyError(keys[0])
+            return ""
+
+        tool = _get_value(f"{METADATA_PREFIX}tool", "dg_tool", "tool")
+        original_name = _get_value(
+            f"{METADATA_PREFIX}original-name", "dg_original_name", "original_name", "original-name"
+        )
+        file_sha = _get_value(
+            f"{METADATA_PREFIX}file-sha256", "dg_file_sha256", "file_sha256", "file-sha256"
+        )
+        file_size_raw = _get_value(
+            f"{METADATA_PREFIX}file-size", "dg_file_size", "file_size", "file-size"
+        )
+        created_at_raw = _get_value(
+            f"{METADATA_PREFIX}created-at", "dg_created_at", "created_at", "created-at"
+        )
+        ref_key = _get_value(f"{METADATA_PREFIX}ref-key", "dg_ref_key", "ref_key", "ref-key")
+        ref_sha = _get_value(
+            f"{METADATA_PREFIX}ref-sha256", "dg_ref_sha256", "ref_sha256", "ref-sha256"
+        )
+        delta_size_raw = _get_value(
+            f"{METADATA_PREFIX}delta-size", "dg_delta_size", "delta_size", "delta-size"
+        )
+        delta_cmd_value = _get_value(
+            f"{METADATA_PREFIX}delta-cmd", "dg_delta_cmd", "delta_cmd", "delta-cmd", required=False
+        )
+        note_value = _get_value(f"{METADATA_PREFIX}note", "dg_note", "note", required=False)
+
+        try:
+            file_size = int(file_size_raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid file size metadata: {file_size_raw}") from None
+
+        try:
+            delta_size = int(delta_size_raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid delta size metadata: {delta_size_raw}") from None
+
+        created_at_text = created_at_raw.rstrip("Z")
+        try:
+            created_at = datetime.fromisoformat(created_at_text)
+        except ValueError as exc:
+            raise ValueError(f"Invalid created_at metadata: {created_at_raw}") from exc
+
+        if not delta_cmd_value:
+            object_name = original_name or "<unknown>"
             logger.warning(
-                "Delta metadata missing %s for %s; using empty command", delta_cmd_key, object_name
+                "Delta metadata missing %s for %s; using empty command",
+                f"{METADATA_PREFIX}delta-cmd",
+                object_name,
             )
             delta_cmd_value = ""
+
         return cls(
-            tool=data[f"{METADATA_PREFIX}tool"],
-            original_name=data[f"{METADATA_PREFIX}original-name"],
-            file_sha256=data[f"{METADATA_PREFIX}file-sha256"],
-            file_size=int(data[f"{METADATA_PREFIX}file-size"]),
-            created_at=datetime.fromisoformat(data[f"{METADATA_PREFIX}created-at"].rstrip("Z")),
-            ref_key=data[f"{METADATA_PREFIX}ref-key"],
-            ref_sha256=data[f"{METADATA_PREFIX}ref-sha256"],
-            delta_size=int(data[f"{METADATA_PREFIX}delta-size"]),
+            tool=tool,
+            original_name=original_name,
+            file_sha256=file_sha,
+            file_size=file_size,
+            created_at=created_at,
+            ref_key=ref_key,
+            ref_sha256=ref_sha,
+            delta_size=delta_size,
             delta_cmd=delta_cmd_value,
-            note=data.get(f"{METADATA_PREFIX}note"),
+            note=note_value or None,
         )
 
 
