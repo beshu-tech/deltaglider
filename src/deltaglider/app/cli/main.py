@@ -890,6 +890,151 @@ def stats(
         sys.exit(1)
 
 
+@cli.command()
+@click.argument("bucket")
+@click.option("--dry-run", is_flag=True, help="Show what would be deleted without deleting")
+@click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
+@click.option("--endpoint-url", help="Override S3 endpoint URL")
+@click.option("--region", help="AWS region")
+@click.option("--profile", help="AWS profile to use")
+@click.pass_obj
+def purge(
+    service: DeltaService,
+    bucket: str,
+    dry_run: bool,
+    output_json: bool,
+    endpoint_url: str | None,
+    region: str | None,
+    profile: str | None,
+) -> None:
+    """Purge expired temporary files from .deltaglider/tmp/.
+
+    This command scans the .deltaglider/tmp/ prefix in the specified bucket
+    and deletes any files whose dg-expires-at metadata indicates they have expired.
+    
+    These temporary files are created by the rehydration process when deltaglider-compressed
+    files need to be made available for direct download (e.g., via presigned URLs).
+
+    BUCKET can be specified as:
+      - s3://bucket-name/
+      - s3://bucket-name
+      - bucket-name
+
+    Examples:
+      deltaglider purge mybucket                    # Purge expired files
+      deltaglider purge mybucket --dry-run          # Preview what would be deleted
+      deltaglider purge mybucket --json             # JSON output for automation
+      deltaglider purge s3://mybucket/              # Also accepts s3:// URLs
+    """
+    # Recreate service with AWS parameters if provided
+    if endpoint_url or region or profile:
+        service = create_service(
+            log_level=os.environ.get("DG_LOG_LEVEL", "INFO"),
+            endpoint_url=endpoint_url,
+            region=region,
+            profile=profile,
+        )
+
+    try:
+        # Parse bucket from S3 URL if needed
+        if is_s3_path(bucket):
+            bucket, _prefix = parse_s3_url(bucket)
+
+        if not bucket:
+            click.echo("Error: Invalid bucket name", err=True)
+            sys.exit(1)
+
+        # Perform the purge (or dry run simulation)
+        if dry_run:
+            # For dry run, we need to simulate what would be deleted
+            prefix = ".deltaglider/tmp/"
+            expired_files = []
+            total_size = 0
+            
+            # List all objects in temp directory
+            import boto3
+            from datetime import datetime, timezone
+            
+            s3_client = boto3.client(
+                "s3",
+                endpoint_url=endpoint_url or os.environ.get("AWS_ENDPOINT_URL"),
+                region_name=region,
+            )
+            
+            paginator = s3_client.get_paginator('list_objects_v2')
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+            
+            for page in page_iterator:
+                for obj in page.get('Contents', []):
+                    # Get object metadata
+                    head_response = s3_client.head_object(Bucket=bucket, Key=obj['Key'])
+                    metadata = head_response.get('Metadata', {})
+                    
+                    expires_at_str = metadata.get('dg-expires-at')
+                    if expires_at_str:
+                        try:
+                            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                            if expires_at.tzinfo is None:
+                                expires_at = expires_at.replace(tzinfo=timezone.utc)
+                            
+                            if datetime.now(timezone.utc) >= expires_at:
+                                expired_files.append({
+                                    'key': obj['Key'],
+                                    'size': obj['Size'],
+                                    'expires_at': expires_at_str,
+                                })
+                                total_size += obj['Size']
+                        except ValueError:
+                            pass
+            
+            if output_json:
+                output = {
+                    "bucket": bucket,
+                    "prefix": prefix,
+                    "dry_run": True,
+                    "would_delete_count": len(expired_files),
+                    "total_size_to_free": total_size,
+                    "expired_files": expired_files[:10],  # Show first 10
+                }
+                click.echo(json.dumps(output, indent=2))
+            else:
+                click.echo(f"Dry run: Would delete {len(expired_files)} expired file(s)")
+                click.echo(f"Total space to free: {total_size:,} bytes")
+                if expired_files:
+                    click.echo("\nFiles that would be deleted (first 10):")
+                    for file_info in expired_files[:10]:
+                        click.echo(f"  {file_info['key']} (expires: {file_info['expires_at']})")
+                    if len(expired_files) > 10:
+                        click.echo(f"  ... and {len(expired_files) - 10} more")
+        else:
+            # Perform actual purge using the service method
+            result = service.purge_temp_files(bucket)
+            
+            if output_json:
+                # JSON output
+                click.echo(json.dumps(result, indent=2))
+            else:
+                # Human-readable output
+                click.echo(f"Purge Statistics for bucket: {bucket}")
+                click.echo(f"{'=' * 60}")
+                click.echo(f"Expired files found:  {result['expired_count']}")
+                click.echo(f"Files deleted:        {result['deleted_count']}")
+                click.echo(f"Errors:               {result['error_count']}")
+                click.echo(f"Space freed:          {result['total_size_freed']:,} bytes")
+                click.echo(f"Duration:             {result['duration_seconds']:.2f} seconds")
+                
+                if result['errors']:
+                    click.echo("\nErrors encountered:")
+                    for error in result['errors'][:5]:
+                        click.echo(f"  - {error}")
+                    if len(result['errors']) > 5:
+                        click.echo(f"  ... and {len(result['errors']) - 5} more errors")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 def main() -> None:
     """Main entry point."""
     cli()
