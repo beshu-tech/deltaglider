@@ -100,6 +100,7 @@ class DeltaMeta:
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> "DeltaMeta":
         """Create from S3 metadata dict with DeltaGlider namespace prefix."""
+
         def _get_value(*keys: str, required: bool = True) -> str:
             for key in keys:
                 if key in data and data[key] != "":
