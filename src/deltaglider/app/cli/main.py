@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -911,7 +912,7 @@ def purge(
 
     This command scans the .deltaglider/tmp/ prefix in the specified bucket
     and deletes any files whose dg-expires-at metadata indicates they have expired.
-    
+
     These temporary files are created by the rehydration process when deltaglider-compressed
     files need to be made available for direct download (e.g., via presigned URLs).
 
@@ -950,43 +951,48 @@ def purge(
             prefix = ".deltaglider/tmp/"
             expired_files = []
             total_size = 0
-            
+
             # List all objects in temp directory
+            from datetime import datetime
+
             import boto3
-            from datetime import datetime, timezone
-            
+
             s3_client = boto3.client(
                 "s3",
                 endpoint_url=endpoint_url or os.environ.get("AWS_ENDPOINT_URL"),
                 region_name=region,
             )
-            
-            paginator = s3_client.get_paginator('list_objects_v2')
+
+            paginator = s3_client.get_paginator("list_objects_v2")
             page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
-            
+
             for page in page_iterator:
-                for obj in page.get('Contents', []):
+                for obj in page.get("Contents", []):
                     # Get object metadata
-                    head_response = s3_client.head_object(Bucket=bucket, Key=obj['Key'])
-                    metadata = head_response.get('Metadata', {})
-                    
-                    expires_at_str = metadata.get('dg-expires-at')
+                    head_response = s3_client.head_object(Bucket=bucket, Key=obj["Key"])
+                    metadata = head_response.get("Metadata", {})
+
+                    expires_at_str = metadata.get("dg-expires-at")
                     if expires_at_str:
                         try:
-                            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                            expires_at = datetime.fromisoformat(
+                                expires_at_str.replace("Z", "+00:00")
+                            )
                             if expires_at.tzinfo is None:
-                                expires_at = expires_at.replace(tzinfo=timezone.utc)
-                            
-                            if datetime.now(timezone.utc) >= expires_at:
-                                expired_files.append({
-                                    'key': obj['Key'],
-                                    'size': obj['Size'],
-                                    'expires_at': expires_at_str,
-                                })
-                                total_size += obj['Size']
+                                expires_at = expires_at.replace(tzinfo=UTC)
+
+                            if datetime.now(UTC) >= expires_at:
+                                expired_files.append(
+                                    {
+                                        "key": obj["Key"],
+                                        "size": obj["Size"],
+                                        "expires_at": expires_at_str,
+                                    }
+                                )
+                                total_size += obj["Size"]
                         except ValueError:
                             pass
-            
+
             if output_json:
                 output = {
                     "bucket": bucket,
@@ -1009,7 +1015,7 @@ def purge(
         else:
             # Perform actual purge using the service method
             result = service.purge_temp_files(bucket)
-            
+
             if output_json:
                 # JSON output
                 click.echo(json.dumps(result, indent=2))
@@ -1022,12 +1028,12 @@ def purge(
                 click.echo(f"Errors:               {result['error_count']}")
                 click.echo(f"Space freed:          {result['total_size_freed']:,} bytes")
                 click.echo(f"Duration:             {result['duration_seconds']:.2f} seconds")
-                
-                if result['errors']:
+
+                if result["errors"]:
                     click.echo("\nErrors encountered:")
-                    for error in result['errors'][:5]:
+                    for error in result["errors"][:5]:
                         click.echo(f"  - {error}")
-                    if len(result['errors']) > 5:
+                    if len(result["errors"]) > 5:
                         click.echo(f"  ... and {len(result['errors']) - 5} more errors")
 
     except Exception as e:

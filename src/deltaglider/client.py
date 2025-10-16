@@ -1220,29 +1220,24 @@ class DeltaGliderClient:
         self._invalidate_bucket_stats_cache()
         self.service.cache.clear()
 
-    def rehydrate_for_download(
-        self, 
-        Bucket: str, 
-        Key: str, 
-        ExpiresIn: int = 3600
-    ) -> str | None:
+    def rehydrate_for_download(self, Bucket: str, Key: str, ExpiresIn: int = 3600) -> str | None:
         """Rehydrate a deltaglider-compressed file for direct download.
-        
+
         If the file is deltaglider-compressed, this will:
         1. Download and decompress the file
         2. Re-upload to .deltaglider/tmp/ with expiration metadata
         3. Return the new temporary file key
-        
+
         If the file is not deltaglider-compressed, returns None.
-        
+
         Args:
             Bucket: S3 bucket name
             Key: Object key
             ExpiresIn: How long the temporary file should exist (seconds)
-            
+
         Returns:
             New key for temporary file, or None if not deltaglider-compressed
-            
+
         Example:
             >>> client = create_client()
             >>> temp_key = client.rehydrate_for_download(
@@ -1267,19 +1262,19 @@ class DeltaGliderClient:
         ExpiresIn: int = 3600,
     ) -> str:
         """Generate a presigned URL with automatic rehydration for deltaglider files.
-        
+
         This method handles both regular and deltaglider-compressed files:
         - For regular files: Returns a standard presigned URL
         - For deltaglider files: Rehydrates to temporary location and returns presigned URL
-        
+
         Args:
             Bucket: S3 bucket name
             Key: Object key
             ExpiresIn: URL expiration time in seconds
-            
+
         Returns:
             Presigned URL for direct download
-            
+
         Example:
             >>> client = create_client()
             >>> # Works for both regular and deltaglider files
@@ -1292,36 +1287,32 @@ class DeltaGliderClient:
         """
         # Try to rehydrate if it's a deltaglider file
         temp_key = self.rehydrate_for_download(Bucket, Key, ExpiresIn)
-        
+
         # Use the temporary key if rehydration occurred, otherwise use original
         download_key = temp_key if temp_key else Key
-        
+
         # Extract the original filename for Content-Disposition header
         original_filename = Key.removesuffix(".delta") if Key.endswith(".delta") else Key
         if "/" in original_filename:
             original_filename = original_filename.split("/")[-1]
-        
+
         # Generate presigned URL with Content-Disposition to force correct filename
-        params = {'Bucket': Bucket, 'Key': download_key}
+        params = {"Bucket": Bucket, "Key": download_key}
         if temp_key:
             # For rehydrated files, set Content-Disposition to use original filename
-            params['ResponseContentDisposition'] = f'attachment; filename="{original_filename}"'
-        
-        return self.generate_presigned_url(
-            'get_object',
-            Params=params,
-            ExpiresIn=ExpiresIn
-        )
+            params["ResponseContentDisposition"] = f'attachment; filename="{original_filename}"'
+
+        return self.generate_presigned_url("get_object", Params=params, ExpiresIn=ExpiresIn)
 
     def purge_temp_files(self, Bucket: str) -> dict[str, Any]:
         """Purge expired temporary files from .deltaglider/tmp/.
-        
+
         Scans the .deltaglider/tmp/ prefix and deletes any files
         whose dg-expires-at metadata indicates they have expired.
-        
+
         Args:
             Bucket: S3 bucket to purge temp files from
-            
+
         Returns:
             dict with purge statistics including:
             - deleted_count: Number of files deleted
@@ -1330,7 +1321,7 @@ class DeltaGliderClient:
             - total_size_freed: Total bytes freed
             - duration_seconds: Operation duration
             - errors: List of error messages
-            
+
         Example:
             >>> client = create_client()
             >>> result = client.purge_temp_files(Bucket='my-bucket')
