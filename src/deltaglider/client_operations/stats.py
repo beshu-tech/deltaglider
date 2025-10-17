@@ -27,8 +27,8 @@ CACHE_VERSION = "1.0"
 CACHE_PREFIX = ".deltaglider"
 
 # Listing limits (prevent runaway scans on gigantic buckets)
-QUICK_LIST_LIMIT = 10_000
-SAMPLED_LIST_LIMIT = 10_000
+QUICK_LIST_LIMIT = 60_000
+SAMPLED_LIST_LIMIT = 30_000
 
 # ============================================================================
 # Internal Helper Functions
