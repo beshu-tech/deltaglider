@@ -1,6 +1,7 @@
 # Multi-stage build for deltaglider
 ARG PYTHON_VERSION=3.12-slim
 ARG UV_VERSION=0.5.13
+ARG VERSION=6.0.2
 
 # Builder stage - install UV and dependencies
 FROM ghcr.io/astral-sh/uv:$UV_VERSION AS uv
@@ -16,16 +17,15 @@ WORKDIR /build
 COPY pyproject.toml ./
 COPY README.md ./
 
-# Install dependencies with UV caching
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --compile-bytecode .
-
-# Copy source code
+# Copy source code - needed for setuptools-scm to write version file
 COPY src ./src
 
-# Install the package (force reinstall to ensure it's properly installed)
+# Install dependencies and package with UV caching
+# Set SETUPTOOLS_SCM_PRETEND_VERSION to avoid needing .git directory
+ARG VERSION
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DELTAGLIDER=${VERSION}
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --compile-bytecode --no-deps --force-reinstall .
+    uv pip install --compile-bytecode .
 
 # Runtime stage - minimal image
 FROM python:${PYTHON_VERSION}
@@ -90,9 +90,10 @@ ENV DG_CACHE_MEMORY_SIZE_MB=100
 # ENV AWS_DEFAULT_REGION=us-east-1
 
 # Labels
+ARG VERSION
 LABEL org.opencontainers.image.title="DeltaGlider" \
       org.opencontainers.image.description="Delta-aware S3 file storage wrapper with encryption" \
-      org.opencontainers.image.version="5.0.3" \
+      org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.authors="Beshu Limited" \
       org.opencontainers.image.source="https://github.com/beshu-tech/deltaglider"
 
