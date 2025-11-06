@@ -1,6 +1,6 @@
 # DeltaGlider Python SDK Documentation
 
-The DeltaGlider Python SDK provides a **boto3-compatible API for core S3 operations** (~20% of methods covering 80% of use cases), while achieving 99%+ compression for versioned artifacts through intelligent binary delta compression.
+The DeltaGlider Python SDK provides a **boto3-compatible API for core S3 operations** (~20% of methods covering 80% of use cases), while achieving 99%+ compression for very similar versioned artifacts through intelligent binary delta compression.
 
 ## 🎯 Key Highlights
 
