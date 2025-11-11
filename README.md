@@ -26,12 +26,16 @@ From our [ReadOnlyREST case study](docs/case-study-readonlyrest.md):
 - **Before**: 201,840 files, 3.96TB storage, $1,120/year
 - **After**: Same files, 4.9GB storage, $1.32/year
 - **Compression**: 99.9% (not a typo)
-- **Integration time**: 5 minutes
+- **Integration time**: 5 minutes 
+- **Data migration** `deltaglider migrate s3://origin-bucket s3://dest-bucket`
+
+Deltaglider is great for compressed archives of similar content. Like multiple releases of the same software, DB backups, etc.
+We don't expect significant benefit for multimedia content like videos, but we never tried.
 
 ## Quick Start
 
 The quickest way to start is using the GUI
-* https://github.com/sscarduzio/dg_commander/
+* https://github.com/beshu-tech/deltaglider_commander/
 
 ### CLI Installation
 
@@ -136,11 +140,11 @@ Traditional S3:
 
 With DeltaGlider:
   v1.0.0.zip (100MB) → S3: 100MB reference + 0KB delta
-  v1.0.1.zip (100MB) → S3: 98KB delta (100.1MB total)
-  v1.0.2.zip (100MB) → S3: 97KB delta (100.3MB total)
+  v1.0.1.zip (100MB) → S3: 98KB delta (from 100.1MB total)
+  v1.0.2.zip (100MB) → S3: 97KB delta (from 100.3MB total)
 ```
 
-DeltaGlider stores the first file as a reference and subsequent similar files as tiny deltas (differences). When you download, it reconstructs the original file perfectly using the reference + delta.
+DeltaGlider stores the first file in a directory (deltaspace) as a reference and subsequent similar files as tiny deltas (differences). When you download, it reconstructs the original file perfectly using the reference + delta.
 
 ### Intelligent File Type Detection
 
@@ -160,7 +164,7 @@ DeltaGlider automatically detects file types and applies the optimal strategy:
 - **AWS CLI Replacement**: Same commands as `aws s3` with automatic compression
 - **boto3-Compatible SDK**: Works with existing boto3 code with minimal changes
 - **Zero Configuration**: No databases, no manifest files, no complex setup
-- **Data Integrity**: SHA256 verification on every operation
+- **Data Integrity**: original file's SHA256 checksum saved within S3 metadata, verification on every reconstruction
 - **S3 Compatible**: Works with AWS S3, MinIO, Cloudflare R2, and any S3-compatible storage
 
 ## CLI Reference
