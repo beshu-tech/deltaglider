@@ -6,9 +6,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](https://github.com/jmacd/xdelta)
 
-<div align="center">
-  <img src="https://github.com/beshu-tech/deltaglider/raw/main/docs/deltaglider.png" alt="DeltaGlider Logo"/>
-</div>
+> 🌟 Star if you like this! 🙏
+> Leave a message in [Issues](https://github.com/beshu-tech/deltaglider/issues) - we are listening!
 
 **Store 4TB of similar files in 5GB. No, that's not a typo.**
 
@@ -36,6 +35,10 @@ We don't expect significant benefit for multimedia content like videos, but we n
 
 The quickest way to start is using the GUI
 * https://github.com/beshu-tech/deltaglider_commander/
+
+<div align="center">
+  <img src="https://github.com/beshu-tech/deltaglider/raw/main/docs/deltaglider.png" alt="DeltaGlider Logo"/>
+</div>
 
 ### CLI Installation
 
@@ -487,18 +490,18 @@ This is why DeltaGlider achieves 99%+ compression on versioned archives - xdelta
 
 ### System Architecture
 
-DeltaGlider uses a clean hexagonal architecture:
+DeltaGlider intelligently stores files within **DeltaSpaces** - S3 prefixes where related files share a common reference file for delta compression:
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Your App  │────▶│ DeltaGlider  │────▶│  S3/MinIO   │
-│   (CLI/SDK) │     │    Core      │     │   Storage   │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │ Local Cache  │
-                    │ (References) │
-                    └──────────────┘
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
+│   Your App  │────▶│ DeltaGlider  │────▶│   DeltaSpace    │
+│   (CLI/SDK) │     │    Core      │     │  (S3 prefix)    │
+└─────────────┘     └──────────────┘     ├─────────────────┤
+                           │              │ reference.bin   │
+                    ┌──────▼───────┐      │ file1.delta    │
+                    │ Local Cache  │      │ file2.delta    │
+                    │ (References) │      │ file3.delta    │
+                    └──────────────┘      └─────────────────┘
 ```
 
 **Key Components:**
@@ -507,6 +510,9 @@ DeltaGlider uses a clean hexagonal architecture:
 - **Integrity verification**: SHA256 on every operation
 - **Local caching**: Fast repeated operations
 - **Zero dependencies**: No database, no manifest files
+- **Modular storage**: The storage layer is pluggable - you could easily replace S3 with a filesystem driver (using extended attributes for metadata) or any other backend
+
+The codebase follows a ports-and-adapters pattern where core business logic is decoupled from infrastructure, with storage operations abstracted through well-defined interfaces in the `ports/` directory and concrete implementations in `adapters/`.
 
 ### When to Use DeltaGlider
 
@@ -651,14 +657,8 @@ MIT - Use it freely in your projects.
 
 ## Success Stories
 
-> "We reduced our artifact storage from 4TB to 5GB. This isn't hyperbole—it's math."
-> — [ReadOnlyREST Case Study](docs/case-study-readonlyrest.md)
-
-> "Our CI/CD pipeline now uploads 100x faster. Deploys that took minutes now take seconds."
-> — Platform Engineer at [redacted]
-
-> "We were about to buy expensive deduplication storage. DeltaGlider saved us $50K/year."
-> — CTO at [stealth startup]
+> "We reduced our artifact storage from 4TB to 5GB. CI is also much faster, due to smaller uploads."
+> — [ReadonlyREST Case Study](docs/case-study-readonlyrest.md)
 
 ---
 
@@ -670,4 +670,10 @@ deltaglider analyze s3://your-bucket/
 # Output: "Potential savings: 95.2% (4.8TB → 237GB)"
 ```
 
-Built with ❤️ by engineers who were tired of paying to store the same bytes over and over.
+## Who built this? 
+
+Built with ❤️ by [ReadonlyREST](https://readonlyrest.com) engineers who were tired of paying to store the same bytes over and over.
+
+We also built [Anaphora](https://anaphora.it) for aggregated reports and alerting
+
+And [Deltaglider Commander](https://github.com/beshu-tech/deltaglider_commander)
