@@ -25,6 +25,7 @@ DeltaGlider's smart `list_objects` method eliminates the N+1 query problem by in
 
 ```python
 from deltaglider import create_client
+from deltaglider.client_models import BucketStats
 import time
 
 client = create_client()
@@ -299,15 +300,18 @@ detailed_compression_report('releases')
 
 ```python
 def list_buckets_with_stats():
-    """List all buckets and show cached statistics if available."""
+    """List buckets and augment with cached stats fetched on demand."""
 
-    # Pre-fetch stats for important buckets
-    important_buckets = ['releases', 'backups']
-    for bucket_name in important_buckets:
-        client.get_bucket_stats(bucket_name, mode='detailed')
-
-    # List all buckets (includes cached stats automatically)
     response = client.list_buckets()
+    stats_cache: dict[str, BucketStats | None] = {}
+
+    def ensure_stats(bucket_name: str) -> BucketStats | None:
+        if bucket_name not in stats_cache:
+            try:
+                stats_cache[bucket_name] = client.get_bucket_stats(bucket_name)
+            except Exception:
+                stats_cache[bucket_name] = None
+        return stats_cache[bucket_name]
 
     print("All Buckets:")
     print(f"{'Name':<30} {'Objects':<10} {'Compression':<15} {'Cached'}")
@@ -315,13 +319,12 @@ def list_buckets_with_stats():
 
     for bucket in response['Buckets']:
         name = bucket['Name']
+        stats = ensure_stats(name)
 
-        # Check if stats are cached
-        if 'DeltaGliderStats' in bucket:
-            stats = bucket['DeltaGliderStats']
-            obj_count = f"{stats['ObjectCount']:,}"
-            compression = f"{stats['AverageCompressionRatio']:.1%}"
-            cached = "✓ (detailed)" if stats['Detailed'] else "✓ (quick)"
+        if stats:
+            obj_count = f"{stats.object_count:,}"
+            compression = f"{stats.average_compression_ratio:.1%}"
+            cached = "✓ (S3 cache)"
         else:
             obj_count = "N/A"
             compression = "N/A"
