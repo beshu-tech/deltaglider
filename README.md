@@ -6,12 +6,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![xdelta3](https://img.shields.io/badge/powered%20by-xdelta3-green.svg)](https://github.com/jmacd/xdelta)
 
-> 🌟 Star if you like this! 🙏
-> Leave a message in [Issues](https://github.com/beshu-tech/deltaglider/issues) - we are listening!
 
 **Store 4TB of similar files in 5GB. No, that's not a typo.**
 
 DeltaGlider is a drop-in S3 replacement that may achieve 99.9% size reduction for versioned compressed artifacts, backups, and release archives through intelligent binary delta compression (via xdelta3).
+
+> 🌟 Star if you like this! Or Leave a message in [Issues](https://github.com/beshu-tech/deltaglider/issues) - we are listening!
 
 ## The Problem We Solved
 
@@ -33,7 +33,7 @@ We don't expect significant benefit for multimedia content like videos, but we n
 
 ## Quick Start
 
-The quickest way to start is using the GUI
+Deltaglider comes as SDK, CLI, but we also have a GUI:
 * https://github.com/beshu-tech/deltaglider_commander/
 
 <div align="center">
@@ -209,6 +209,12 @@ deltaglider stats my-bucket --detailed            # Most accurate (slower, all m
 deltaglider stats my-bucket --refresh             # Force cache refresh
 deltaglider stats my-bucket --no-cache            # Skip caching entirely
 deltaglider stats my-bucket --json                # JSON output for automation
+
+# Integrity verification & maintenance
+deltaglider verify s3://releases/file.zip         # Validate stored SHA256
+deltaglider purge my-bucket                       # Clean expired .deltaglider/tmp files
+deltaglider purge my-bucket --dry-run             # Preview purge results
+deltaglider purge my-bucket --json                # Machine-readable purge stats
 
 # Migrate existing S3 buckets to DeltaGlider compression
 deltaglider migrate s3://old-bucket/ s3://new-bucket/         # Interactive migration

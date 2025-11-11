@@ -156,29 +156,34 @@ for obj in response['Contents']:
 
 #### `get_bucket_stats`
 
-Get statistics for a bucket with optional detailed compression metrics. Results are cached per client session for performance.
+Get statistics for a bucket with optional detailed compression metrics. Results are cached inside the bucket for performance.
 
 ```python
 def get_bucket_stats(
     self,
     bucket: str,
-    detailed_stats: bool = False
+    mode: Literal["quick", "sampled", "detailed"] = "quick",
+    use_cache: bool = True,
+    refresh_cache: bool = False,
 ) -> BucketStats
 ```
 
 ##### Parameters
 
 - **bucket** (`str`): S3 bucket name.
-- **detailed_stats** (`bool`): If True, fetch accurate compression ratios for delta files. Default: False.
-  - With `detailed_stats=False`: ~50ms for any bucket size (LIST calls only)
-  - With `detailed_stats=True`: ~2-3s per 1000 objects (adds HEAD calls for delta files)
+- **mode** (`Literal[...]`): Accuracy/cost trade-off:
+  - `"quick"` (default): LIST-only scan; compression ratios for deltas are estimated.
+  - `"sampled"`: HEAD one delta per deltaspace and reuse the ratio.
+  - `"detailed"`: HEAD every delta object; slowest but exact.
+- **use_cache** (`bool`): If True, read/write `.deltaglider/stats_{mode}.json` in the bucket for reuse.
+- **refresh_cache** (`bool`): Force recomputation even if a cache file is valid.
 
 ##### Caching Behavior
 
-- **Session-scoped cache**: Results cached within client instance lifetime
-- **Automatic invalidation**: Cache cleared on bucket mutations (put, delete, bucket operations)
-- **Intelligent reuse**: Detailed stats can serve quick stat requests
-- **Manual cache control**: Use `clear_cache()` to invalidate all cached stats
+- Stats are cached per mode directly inside the bucket at `.deltaglider/stats_{mode}.json`.
+- Every call validates cache freshness via a quick LIST (object count + compressed size).
+- `refresh_cache=True` skips cache validation and recomputes immediately.
+- `use_cache=False` bypasses both reading and writing cache artifacts.
 
 ##### Returns
 
@@ -195,24 +200,20 @@ def get_bucket_stats(
 ##### Examples
 
 ```python
-# Quick stats for dashboard display (cached after first call)
+# Quick stats (fast LIST-only)
 stats = client.get_bucket_stats('releases')
 print(f"Objects: {stats.object_count}, Size: {stats.total_size}")
 
-# Second call hits cache (instant response)
-stats = client.get_bucket_stats('releases')
-print(f"Space saved: {stats.space_saved} bytes")
+# Sampled/detailed modes for analytics
+sampled = client.get_bucket_stats('releases', mode='sampled')
+detailed = client.get_bucket_stats('releases', mode='detailed')
+print(f"Compression ratio: {detailed.average_compression_ratio:.1%}")
 
-# Detailed stats for analytics (slower but accurate, also cached)
-stats = client.get_bucket_stats('releases', detailed_stats=True)
-print(f"Compression ratio: {stats.average_compression_ratio:.1%}")
+# Force refresh if an external tool modified the bucket
+fresh = client.get_bucket_stats('releases', mode='quick', refresh_cache=True)
 
-# Quick call after detailed call reuses detailed cache (more accurate)
-quick_stats = client.get_bucket_stats('releases')  # Uses detailed cache
-
-# Clear cache to force refresh
-client.clear_cache()
-stats = client.get_bucket_stats('releases')  # Fresh computation
+# Skip cache entirely when running ad-hoc diagnostics
+uncached = client.get_bucket_stats('releases', use_cache=False)
 ```
 
 #### `put_object`
@@ -334,7 +335,7 @@ client.delete_bucket(Bucket='old-releases')
 
 #### `list_buckets`
 
-List all S3 buckets (boto3-compatible). Includes cached statistics when available.
+List all S3 buckets (boto3-compatible).
 
 ```python
 def list_buckets(
@@ -345,51 +346,18 @@ def list_buckets(
 
 ##### Returns
 
-Dict with list of buckets and owner information (identical to boto3). Each bucket may include optional `DeltaGliderStats` metadata if statistics have been previously cached.
-
-##### Response Structure
-
-```python
-{
-    'Buckets': [
-        {
-            'Name': 'bucket-name',
-            'CreationDate': datetime(2025, 1, 1),
-            'DeltaGliderStats': {  # Optional, only if cached
-                'Cached': True,
-                'Detailed': bool,  # Whether detailed stats were fetched
-                'ObjectCount': int,
-                'TotalSize': int,
-                'CompressedSize': int,
-                'SpaceSaved': int,
-                'AverageCompressionRatio': float,
-                'DeltaObjects': int,
-                'DirectObjects': int
-            }
-        }
-    ],
-    'Owner': {...}
-}
-```
+Dict with the same structure boto3 returns (`Buckets`, `Owner`, `ResponseMetadata`). DeltaGlider does not inject additional metadata; use `get_bucket_stats()` for compression data.
 
 ##### Examples
 
 ```python
-# List all buckets
 response = client.list_buckets()
 for bucket in response['Buckets']:
     print(f"{bucket['Name']} - Created: {bucket['CreationDate']}")
 
-    # Check if stats are cached
-    if 'DeltaGliderStats' in bucket:
-        stats = bucket['DeltaGliderStats']
-        print(f"  Cached stats: {stats['ObjectCount']} objects, "
-              f"{stats['AverageCompressionRatio']:.1%} compression")
-
-# Fetch stats first, then list buckets to see cached data
-client.get_bucket_stats('my-bucket', detailed_stats=True)
-response = client.list_buckets()
-# Now 'my-bucket' will include DeltaGliderStats in response
+# Combine with get_bucket_stats for deeper insights
+stats = client.get_bucket_stats('releases', mode='detailed')
+print(f"releases -> {stats.object_count} objects, {stats.space_saved/(1024**3):.2f} GB saved")
 ```
 
 ### Simple API Methods
@@ -528,13 +496,9 @@ else:
 
 ### Cache Management Methods
 
-DeltaGlider maintains two types of caches for performance optimization:
-1. **Reference cache**: Binary reference files used for delta reconstruction
-2. **Statistics cache**: Bucket statistics (session-scoped)
-
 #### `clear_cache`
 
-Clear all cached data including reference files and bucket statistics.
+Clear all locally cached reference files.
 
 ```python
 def clear_cache(self) -> None
@@ -542,23 +506,20 @@ def clear_cache(self) -> None
 
 ##### Description
 
-Removes all cached reference files from the local filesystem and invalidates all bucket statistics. Useful for:
-- Forcing fresh statistics computation
+Removes all cached reference files from the local filesystem. Useful for:
 - Freeing disk space in long-running applications
-- Ensuring latest data after external bucket modifications
+- Ensuring the next upload/download fetches fresh references from S3
+- Resetting cache after configuration or credential changes
 - Testing and development workflows
 
-##### Cache Types Cleared
+##### Cache Scope
 
-1. **Reference Cache**: Binary reference files stored in `/tmp/deltaglider-*/`
-   - Encrypted at rest with ephemeral keys
-   - Content-addressed storage (SHA256-based filenames)
-   - Automatically cleaned up on process exit
-
-2. **Statistics Cache**: Bucket statistics cached per client session
-   - Metadata about compression ratios and object counts
-   - Session-scoped (not persisted to disk)
-   - Automatically invalidated on bucket mutations
+- **Reference Cache**: Binary reference files stored in `/tmp/deltaglider-*/`
+  - Encrypted at rest with ephemeral keys
+  - Content-addressed storage (SHA256-based filenames)
+  - Automatically cleaned up on process exit
+- **Statistics Cache**: Stored inside the bucket as `.deltaglider/stats_{mode}.json`.
+  - `clear_cache()` does *not* remove these S3 objects; use `refresh_cache=True` or delete the objects manually if needed.
 
 ##### Examples
 
@@ -574,70 +535,13 @@ for i in range(1000):
     if i % 100 == 0:
         client.clear_cache()
 
-# Force fresh statistics after external changes
-stats_before = client.get_bucket_stats('releases')  # Cached
-# ... external tool modifies bucket ...
-client.clear_cache()
-stats_after = client.get_bucket_stats('releases')  # Fresh data
+# Force fresh statistics after external changes (skip cache instead of clearing)
+stats_before = client.get_bucket_stats('releases')
+stats_after = client.get_bucket_stats('releases', refresh_cache=True)
 
 # Development workflow
 client.clear_cache()  # Start with clean state
 ```
-
-#### `evict_cache`
-
-Remove a specific cached reference file from the local cache.
-
-```python
-def evict_cache(self, s3_url: str) -> None
-```
-
-##### Parameters
-
-- **s3_url** (`str`): S3 URL of the reference file to evict (e.g., `s3://bucket/prefix/reference.bin`)
-
-##### Description
-
-Removes a specific reference file from the cache without affecting other cached files or statistics. Useful for:
-- Selective cache invalidation when specific references are updated
-- Memory management in applications with many delta spaces
-- Testing specific delta compression scenarios
-
-##### Examples
-
-```python
-# Evict specific reference after update
-client.upload("new-reference.zip", "s3://releases/v2.0.0/")
-client.evict_cache("s3://releases/v2.0.0/reference.bin")
-
-# Next upload will fetch fresh reference
-client.upload("similar-file.zip", "s3://releases/v2.0.0/")
-
-# Selective eviction for specific delta spaces
-delta_spaces = ["v1.0.0", "v1.1.0", "v1.2.0"]
-for space in delta_spaces:
-    client.evict_cache(f"s3://releases/{space}/reference.bin")
-```
-
-##### See Also
-
-- [docs/CACHE_MANAGEMENT.md](../../CACHE_MANAGEMENT.md): Complete cache management guide
-- `clear_cache()`: Clear all caches
-
-#### `lifecycle_policy`
-
-Set lifecycle policy for S3 prefix (placeholder for future implementation).
-
-```python
-def lifecycle_policy(
-    self,
-    s3_prefix: str,
-    days_before_archive: int = 30,
-    days_before_delete: int = 90
-) -> None
-```
-
-**Note**: This method is a placeholder for future S3 lifecycle policy management.
 
 ## UploadSummary
 

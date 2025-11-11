@@ -41,19 +41,19 @@ def fast_bucket_listing(bucket: str):
 
     # Process objects for display
     items = []
-    for obj in response.contents:
+    for obj in response['Contents']:
+        metadata = obj.get("Metadata", {})
         items.append({
-            "key": obj.key,
-            "size": obj.size,
-            "last_modified": obj.last_modified,
-            "is_delta": obj.is_delta,  # Determined from filename
-            # No compression_ratio - would require HEAD request
+            "key": obj["Key"],
+            "size": obj["Size"],
+            "last_modified": obj["LastModified"],
+            "is_delta": metadata.get("deltaglider-is-delta") == "true",
         })
 
     elapsed = time.time() - start
     print(f"Listed {len(items)} objects in {elapsed*1000:.0f}ms")
 
-    return items, response.next_continuation_token
+    return items, response.get("NextContinuationToken")
 
 # Example: List first page
 items, next_token = fast_bucket_listing('releases')
@@ -75,12 +75,12 @@ def paginated_listing(bucket: str, page_size: int = 50):
             FetchMetadata=False  # Keep it fast
         )
 
-        all_objects.extend(response.contents)
+        all_objects.extend(response["Contents"])
 
-        if not response.is_truncated:
+        if not response.get("IsTruncated"):
             break
 
-        continuation_token = response.next_continuation_token
+        continuation_token = response.get("NextContinuationToken")
         print(f"Fetched {len(all_objects)} objects so far...")
 
     return all_objects
@@ -96,8 +96,8 @@ print(f"Total objects: {len(all_objects)}")
 def dashboard_with_stats(bucket: str):
     """Dashboard view with optional detailed stats."""
 
-    # Quick overview (fast - no metadata)
-    stats = client.get_bucket_stats(bucket, detailed_stats=False)
+    # Quick overview (fast LIST-only)
+    stats = client.get_bucket_stats(bucket)
 
     print(f"Quick Stats for {bucket}:")
     print(f"  Total Objects: {stats.object_count}")
@@ -108,7 +108,7 @@ def dashboard_with_stats(bucket: str):
 
     # Detailed compression analysis (slower - fetches metadata for deltas only)
     if stats.delta_objects > 0:
-        detailed_stats = client.get_bucket_stats(bucket, detailed_stats=True)
+        detailed_stats = client.get_bucket_stats(bucket, mode='detailed')
         print(f"\nDetailed Compression Stats:")
         print(f"  Average Compression: {detailed_stats.average_compression_ratio:.1%}")
         print(f"  Space Saved: {detailed_stats.space_saved / (1024**3):.2f} GB")
@@ -131,11 +131,25 @@ def compression_analysis(bucket: str, prefix: str = ""):
     )
 
     # Analyze compression effectiveness
-    delta_files = [obj for obj in response.contents if obj.is_delta]
+    delta_files: list[dict[str, float | int | str]] = []
+    for obj in response["Contents"]:
+        metadata = obj.get("Metadata", {})
+        if metadata.get("deltaglider-is-delta") != "true":
+            continue
+        original_size = int(metadata.get("deltaglider-original-size", obj["Size"]))
+        compression_ratio = float(metadata.get("deltaglider-compression-ratio", 0.0))
+        delta_files.append(
+            {
+                "key": obj["Key"],
+                "original": original_size,
+                "compressed": obj["Size"],
+                "ratio": compression_ratio,
+            }
+        )
 
     if delta_files:
-        total_original = sum(obj.original_size for obj in delta_files)
-        total_compressed = sum(obj.compressed_size for obj in delta_files)
+        total_original = sum(obj["original"] for obj in delta_files)
+        total_compressed = sum(obj["compressed"] for obj in delta_files)
         avg_ratio = (total_original - total_compressed) / total_original
 
         print(f"Compression Analysis for {prefix or 'all files'}:")
@@ -145,11 +159,11 @@ def compression_analysis(bucket: str, prefix: str = ""):
         print(f"  Average Compression: {avg_ratio:.1%}")
 
         # Find best and worst compression
-        best = max(delta_files, key=lambda x: x.compression_ratio or 0)
-        worst = min(delta_files, key=lambda x: x.compression_ratio or 1)
+        best = max(delta_files, key=lambda x: x["ratio"])
+        worst = min(delta_files, key=lambda x: x["ratio"])
 
-        print(f"  Best Compression: {best.key} ({best.compression_ratio:.1%})")
-        print(f"  Worst Compression: {worst.key} ({worst.compression_ratio:.1%})")
+        print(f"  Best Compression: {best['key']} ({best['ratio']:.1%})")
+        print(f"  Worst Compression: {worst['key']} ({worst['ratio']:.1%})")
 
 # Example: Analyze v2.0 releases
 compression_analysis('releases', 'v2.0/')
@@ -180,7 +194,11 @@ def performance_comparison(bucket: str):
     )
     time_detailed = (time.time() - start) * 1000
 
-    delta_count = sum(1 for obj in response_fast.contents if obj.is_delta)
+    delta_count = sum(
+        1
+        for obj in response_fast["Contents"]
+        if obj.get("Metadata", {}).get("deltaglider-is-delta") == "true"
+    )
 
     print(f"Performance Comparison for {bucket}:")
     print(f"  Fast Listing: {time_fast:.0f}ms (1 API call)")
@@ -203,7 +221,7 @@ performance_comparison('releases')
 
 ## Bucket Statistics and Monitoring
 
-DeltaGlider provides powerful bucket statistics with session-level caching for performance.
+DeltaGlider provides powerful bucket statistics with S3-backed caching for performance.
 
 ### Quick Dashboard Stats (Cached)
 
@@ -244,7 +262,7 @@ def detailed_compression_report(bucket: str):
     """Generate detailed compression report with accurate ratios."""
 
     # Detailed stats fetch metadata for delta files (slower, accurate)
-    stats = client.get_bucket_stats(bucket, detailed_stats=True)
+    stats = client.get_bucket_stats(bucket, mode='detailed')
 
     efficiency = (stats.space_saved / stats.total_size * 100) if stats.total_size > 0 else 0
 
@@ -286,7 +304,7 @@ def list_buckets_with_stats():
     # Pre-fetch stats for important buckets
     important_buckets = ['releases', 'backups']
     for bucket_name in important_buckets:
-        client.get_bucket_stats(bucket_name, detailed_stats=True)
+        client.get_bucket_stats(bucket_name, mode='detailed')
 
     # List all buckets (includes cached stats automatically)
     response = client.list_buckets()
@@ -357,7 +375,7 @@ except KeyboardInterrupt:
 
 ## Session-Level Cache Management
 
-DeltaGlider maintains session-level caches for optimal performance in long-running applications.
+DeltaGlider maintains an encrypted reference cache for optimal performance in long-running applications.
 
 ### Long-Running Application Pattern
 
@@ -410,45 +428,13 @@ def handle_external_bucket_changes(bucket: str):
     print("External backup tool running...")
     run_external_backup_tool(bucket)  # Your external tool
 
-    # Clear cache to get fresh data
-    client.clear_cache()
-
-    # Get updated stats
-    stats_after = client.get_bucket_stats(bucket)
+    # Force a recompute of the cached stats
+    stats_after = client.get_bucket_stats(bucket, refresh_cache=True)
     print(f"After: {stats_after.object_count} objects")
     print(f"Added: {stats_after.object_count - stats_before.object_count} objects")
 
 # Example usage
 handle_external_bucket_changes('backups')
-```
-
-### Selective Cache Eviction
-
-```python
-def selective_cache_management():
-    """Manage cache for specific delta spaces."""
-
-    client = create_client()
-
-    # Upload to multiple delta spaces
-    versions = ['v1.0.0', 'v1.1.0', 'v1.2.0']
-
-    for version in versions:
-        client.upload(f"app-{version}.zip", f"s3://releases/{version}/")
-
-    # Update reference for specific version
-    print("Updating v1.1.0 reference...")
-    client.upload("new-reference.zip", "s3://releases/v1.1.0/")
-
-    # Evict only v1.1.0 cache (others remain cached)
-    client.evict_cache("s3://releases/v1.1.0/reference.bin")
-
-    # Next upload to v1.1.0 fetches fresh reference
-    # v1.0.0 and v1.2.0 still use cached references
-    client.upload("similar-file.zip", "s3://releases/v1.1.0/")
-
-# Example: Selective eviction
-selective_cache_management()
 ```
 
 ### Testing with Clean Cache
@@ -491,19 +477,18 @@ def measure_cache_performance(bucket: str):
     client = create_client()
 
     # Test 1: Cold cache
-    client.clear_cache()
     start = time.time()
-    stats1 = client.get_bucket_stats(bucket, detailed_stats=True)
+    stats1 = client.get_bucket_stats(bucket, mode='detailed', refresh_cache=True)
     cold_time = (time.time() - start) * 1000
 
     # Test 2: Warm cache
     start = time.time()
-    stats2 = client.get_bucket_stats(bucket, detailed_stats=True)
+    stats2 = client.get_bucket_stats(bucket, mode='detailed')
     warm_time = (time.time() - start) * 1000
 
     # Test 3: Quick stats from detailed cache
     start = time.time()
-    stats3 = client.get_bucket_stats(bucket, detailed_stats=False)
+    stats3 = client.get_bucket_stats(bucket, mode='quick')
     reuse_time = (time.time() - start) * 1000
 
     print(f"Cache Performance for {bucket}:")

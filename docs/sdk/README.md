@@ -206,9 +206,16 @@ from deltaglider import create_client
 client = create_client(
     endpoint_url="http://minio.internal:9000",  # Custom S3 endpoint
     log_level="DEBUG",                           # Detailed logging
-    cache_dir="/var/cache/deltaglider",         # Custom cache location
+    aws_access_key_id="minio",
+    aws_secret_access_key="minio",
+    region_name="eu-west-1",
+    max_ratio=0.3,                                # Stricter delta acceptance
 )
 ```
+
+> ℹ️  The SDK now manages an encrypted, process-isolated cache automatically in `/tmp/deltaglider-*`.
+> Tune cache behavior via environment variables such as `DG_CACHE_BACKEND`,
+> `DG_CACHE_MEMORY_SIZE_MB`, and `DG_CACHE_ENCRYPTION_KEY` instead of passing a `cache_dir` argument.
 
 ## Real-World Example
 
