@@ -16,10 +16,12 @@ from .errors import (
     StorageIOError,
 )
 from .models import (
+    DeleteResult,
     DeltaMeta,
     DeltaSpace,
     ObjectKey,
     PutSummary,
+    RecursiveDeleteResult,
     ReferenceMeta,
     Sha256,
     VerifyResult,
@@ -36,8 +38,10 @@ __all__ = [
     "DiffDecodeError",
     "StorageIOError",
     "PolicyViolationWarning",
+    "DeleteResult",
     "DeltaSpace",
     "ObjectKey",
+    "RecursiveDeleteResult",
     "Sha256",
     "DeltaMeta",
     "ReferenceMeta",

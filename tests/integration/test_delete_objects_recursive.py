@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from deltaglider import create_client
+from deltaglider.core.models import DeleteResult, RecursiveDeleteResult
 
 
 class MockStorage:
@@ -177,14 +178,16 @@ class TestDeleteObjectsRecursiveStatisticsAggregation:
     def test_aggregates_deleted_count_from_service_and_single_deletes(self, client):
         """Test that deleted counts are aggregated correctly."""
         # Setup: Mock service.delete_recursive to return specific counts
-        mock_result = {
-            "deleted_count": 5,
-            "failed_count": 0,
-            "deltas_deleted": 2,
-            "references_deleted": 1,
-            "direct_deleted": 2,
-            "other_deleted": 0,
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="test/",
+            deleted_count=5,
+            failed_count=0,
+            deltas_deleted=2,
+            references_deleted=1,
+            direct_deleted=2,
+            other_deleted=0,
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
@@ -204,14 +207,16 @@ class TestDeleteObjectsRecursiveStatisticsAggregation:
         client.service.storage.objects["test-bucket/file.txt"] = {"size": 100}
 
         # Mock service.delete_recursive to return additional counts
-        mock_result = {
-            "deleted_count": 3,
-            "failed_count": 0,
-            "deltas_deleted": 1,
-            "references_deleted": 0,
-            "direct_deleted": 2,
-            "other_deleted": 0,
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="file.txt",
+            deleted_count=3,
+            failed_count=0,
+            deltas_deleted=1,
+            references_deleted=0,
+            direct_deleted=2,
+            other_deleted=0,
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
@@ -245,15 +250,17 @@ class TestDeleteObjectsRecursiveErrorHandling:
     def test_service_errors_propagated_in_response(self, client):
         """Test that errors from service.delete_recursive are propagated."""
         # Mock service to return errors
-        mock_result = {
-            "deleted_count": 2,
-            "failed_count": 1,
-            "deltas_deleted": 2,
-            "references_deleted": 0,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-            "errors": ["Error deleting object1", "Error deleting object2"],
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="test/",
+            deleted_count=2,
+            failed_count=1,
+            deltas_deleted=2,
+            references_deleted=0,
+            direct_deleted=0,
+            other_deleted=0,
+            errors=["Error deleting object1", "Error deleting object2"],
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
@@ -271,15 +278,17 @@ class TestDeleteObjectsRecursiveErrorHandling:
         client.service.storage.objects["test-bucket/file.txt"] = {"size": 100}
 
         # Mock service to also return errors
-        mock_result = {
-            "deleted_count": 1,
-            "failed_count": 1,
-            "deltas_deleted": 0,
-            "references_deleted": 0,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-            "errors": ["Service delete error"],
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="file.txt",
+            deleted_count=1,
+            failed_count=1,
+            deltas_deleted=0,
+            references_deleted=0,
+            direct_deleted=0,
+            other_deleted=0,
+            errors=["Service delete error"],
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Mock delete_with_delta_suffix to raise exception
@@ -302,15 +311,17 @@ class TestDeleteObjectsRecursiveWarningsHandling:
     def test_service_warnings_propagated_in_response(self, client):
         """Test that warnings from service.delete_recursive are propagated."""
         # Mock service to return warnings
-        mock_result = {
-            "deleted_count": 3,
-            "failed_count": 0,
-            "deltas_deleted": 2,
-            "references_deleted": 1,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-            "warnings": ["Reference deleted, 2 dependent deltas invalidated"],
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="test/",
+            deleted_count=3,
+            failed_count=0,
+            deltas_deleted=2,
+            references_deleted=1,
+            direct_deleted=0,
+            other_deleted=0,
+            warnings=["Reference deleted, 2 dependent deltas invalidated"],
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Execute
@@ -326,25 +337,29 @@ class TestDeleteObjectsRecursiveWarningsHandling:
         client.service.storage.objects["test-bucket/ref.bin"] = {"size": 100}
 
         # Mock service
-        mock_result = {
-            "deleted_count": 0,
-            "failed_count": 0,
-            "deltas_deleted": 0,
-            "references_deleted": 0,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="ref.bin",
+            deleted_count=0,
+            failed_count=0,
+            deltas_deleted=0,
+            references_deleted=0,
+            direct_deleted=0,
+            other_deleted=0,
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Mock delete_with_delta_suffix to return warnings
         with patch("deltaglider.client.delete_with_delta_suffix") as mock_delete:
             mock_delete.return_value = (
                 "ref.bin",
-                {
-                    "deleted": True,
-                    "type": "reference",
-                    "warnings": ["Warning from single delete"],
-                },
+                DeleteResult(
+                    key="ref.bin",
+                    bucket="test-bucket",
+                    deleted=True,
+                    type="reference",
+                    warnings=["Warning from single delete"],
+                ),
             )
 
             # Execute
@@ -364,26 +379,29 @@ class TestDeleteObjectsRecursiveSingleDeleteDetails:
         client.service.storage.objects["test-bucket/file.txt"] = {"size": 100}
 
         # Mock service
-        mock_result = {
-            "deleted_count": 0,
-            "failed_count": 0,
-            "deltas_deleted": 0,
-            "references_deleted": 0,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="file.txt",
+            deleted_count=0,
+            failed_count=0,
+            deltas_deleted=0,
+            references_deleted=0,
+            direct_deleted=0,
+            other_deleted=0,
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Mock delete_with_delta_suffix
         with patch("deltaglider.client.delete_with_delta_suffix") as mock_delete:
             mock_delete.return_value = (
                 "file.txt",
-                {
-                    "deleted": True,
-                    "type": "direct",
-                    "dependent_deltas": 0,
-                    "warnings": [],
-                },
+                DeleteResult(
+                    key="file.txt",
+                    bucket="test-bucket",
+                    deleted=True,
+                    type="direct",
+                    dependent_deltas=0,
+                ),
             )
 
             # Execute
@@ -412,25 +430,28 @@ class TestDeleteObjectsRecursiveSingleDeleteDetails:
             actual_key = "file.zip.delta" if key == "file.zip" else key
             return (
                 actual_key,
-                {
-                    "deleted": True,
-                    "type": "delta",
-                    "dependent_deltas": 0,
-                    "warnings": [],
-                },
+                DeleteResult(
+                    key=actual_key,
+                    bucket=bucket,
+                    deleted=True,
+                    type="delta",
+                    dependent_deltas=0,
+                ),
             )
 
         client_delete_helpers.delete_with_delta_suffix = mock_delete
 
         # Mock service
-        mock_result = {
-            "deleted_count": 0,
-            "failed_count": 0,
-            "deltas_deleted": 0,
-            "references_deleted": 0,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="file.zip",
+            deleted_count=0,
+            failed_count=0,
+            deltas_deleted=0,
+            references_deleted=0,
+            direct_deleted=0,
+            other_deleted=0,
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         try:
@@ -479,26 +500,29 @@ class TestDeleteObjectsRecursiveEdgeCases:
         client.service.storage.objects["test-bucket/file.txt"] = {"size": 100}
 
         # Mock service
-        mock_result = {
-            "deleted_count": 0,
-            "failed_count": 0,
-            "deltas_deleted": 0,
-            "references_deleted": 0,
-            "direct_deleted": 0,
-            "other_deleted": 0,
-        }
+        mock_result = RecursiveDeleteResult(
+            bucket="test-bucket",
+            prefix="file.txt",
+            deleted_count=0,
+            failed_count=0,
+            deltas_deleted=0,
+            references_deleted=0,
+            direct_deleted=0,
+            other_deleted=0,
+        )
         client.service.delete_recursive = Mock(return_value=mock_result)
 
         # Mock delete_with_delta_suffix to return unknown type
         with patch("deltaglider.client.delete_with_delta_suffix") as mock_delete:
             mock_delete.return_value = (
                 "file.txt",
-                {
-                    "deleted": True,
-                    "type": "unknown_type",  # Not in single_counts keys
-                    "dependent_deltas": 0,
-                    "warnings": [],
-                },
+                DeleteResult(
+                    key="file.txt",
+                    bucket="test-bucket",
+                    deleted=True,
+                    type="unknown_type",  # Not in single_counts keys
+                    dependent_deltas=0,
+                ),
             )
 
             # Execute

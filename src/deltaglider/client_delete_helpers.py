@@ -2,11 +2,12 @@
 
 from .core import DeltaService, ObjectKey
 from .core.errors import NotFoundError
+from .core.models import DeleteResult
 
 
 def delete_with_delta_suffix(
     service: DeltaService, bucket: str, key: str
-) -> tuple[str, dict[str, object]]:
+) -> tuple[str, DeleteResult]:
     """Delete an object, retrying with '.delta' suffix when needed.
 
     Args:
@@ -15,7 +16,7 @@ def delete_with_delta_suffix(
         key: Requested key (without forcing .delta suffix).
 
     Returns:
-        Tuple containing the actual key deleted in storage and the delete result dict.
+        Tuple containing the actual key deleted in storage and the DeleteResult.
 
     Raises:
         NotFoundError: Propagated when both the direct and '.delta' keys are missing.

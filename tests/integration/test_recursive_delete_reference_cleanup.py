@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from deltaglider.app.cli.main import create_service
+from deltaglider.core.models import DeleteResult, RecursiveDeleteResult
 from deltaglider.ports.storage import ObjectHead
 
 
@@ -28,10 +29,10 @@ class TestRecursiveDeleteReferenceCleanup:
 
         result = service.delete_recursive("test-bucket", "nonexistent/")
 
-        assert result["deleted_count"] == 0
-        assert result["failed_count"] == 0
-        assert isinstance(result["errors"], list)
-        assert isinstance(result["warnings"], list)
+        assert result.deleted_count == 0
+        assert result.failed_count == 0
+        assert isinstance(result.errors, list)
+        assert isinstance(result.warnings, list)
 
     def test_delete_recursive_returns_structured_result(self):
         """Test that delete_recursive returns a properly structured result."""
@@ -57,26 +58,22 @@ class TestRecursiveDeleteReferenceCleanup:
 
         result = service.delete_recursive("test-bucket", "test/")
 
-        # Verify structure
-        required_keys = [
-            "bucket",
-            "prefix",
-            "deleted_count",
-            "failed_count",
-            "deltas_deleted",
-            "references_deleted",
-            "direct_deleted",
-            "other_deleted",
-            "errors",
-            "warnings",
-        ]
-        for key in required_keys:
-            assert key in result, f"Missing key: {key}"
+        # Verify structure - result is a RecursiveDeleteResult dataclass
+        assert hasattr(result, "bucket")
+        assert hasattr(result, "prefix")
+        assert hasattr(result, "deleted_count")
+        assert hasattr(result, "failed_count")
+        assert hasattr(result, "deltas_deleted")
+        assert hasattr(result, "references_deleted")
+        assert hasattr(result, "direct_deleted")
+        assert hasattr(result, "other_deleted")
+        assert hasattr(result, "errors")
+        assert hasattr(result, "warnings")
 
-        assert isinstance(result["deleted_count"], int)
-        assert isinstance(result["failed_count"], int)
-        assert isinstance(result["errors"], list)
-        assert isinstance(result["warnings"], list)
+        assert isinstance(result.deleted_count, int)
+        assert isinstance(result.failed_count, int)
+        assert isinstance(result.errors, list)
+        assert isinstance(result.warnings, list)
 
     def test_delete_recursive_categorizes_objects_correctly(self):
         """Test that delete_recursive correctly categorizes different object types."""
@@ -117,12 +114,12 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "test/")
 
         # Should categorize correctly - the exact categorization depends on implementation
-        assert result["deltas_deleted"] == 1  # app.zip.delta
-        assert result["references_deleted"] == 1  # reference.bin
+        assert result.deltas_deleted == 1  # app.zip.delta
+        assert result.references_deleted == 1  # reference.bin
         # Direct and other files may be categorized differently based on metadata detection
-        assert result["direct_deleted"] + result["other_deleted"] == 2  # readme.txt + config.json
-        assert result["deleted_count"] == 4  # total
-        assert result["failed_count"] == 0
+        assert result.direct_deleted + result.other_deleted == 2  # readme.txt + config.json
+        assert result.deleted_count == 4  # total
+        assert result.failed_count == 0
 
     def test_delete_recursive_handles_storage_errors_gracefully(self):
         """Test that delete_recursive handles individual storage errors gracefully."""
@@ -151,10 +148,10 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "test/")
 
         # Should handle partial failure
-        assert result["deleted_count"] == 1  # good.zip.delta succeeded
-        assert result["failed_count"] == 1  # bad.zip.delta failed
-        assert len(result["errors"]) == 1
-        assert "bad" in result["errors"][0]
+        assert result.deleted_count == 1  # good.zip.delta succeeded
+        assert result.failed_count == 1  # bad.zip.delta failed
+        assert len(result.errors) == 1
+        assert "bad" in result.errors[0]
 
     def test_affected_deltaspaces_discovery(self):
         """Test that the system discovers affected deltaspaces when deleting deltas."""
@@ -206,8 +203,8 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "project/team-a/v1/")
 
         # Should have discovered and evaluated the parent reference
-        assert result["deleted_count"] >= 1  # At least the delta file
-        assert result["failed_count"] == 0
+        assert result.deleted_count >= 1  # At least the delta file
+        assert result.failed_count == 0
 
     def test_cli_uses_core_service_method(self):
         """Test that CLI rm -r command uses the core service delete_recursive method."""
@@ -222,14 +219,12 @@ class TestRecursiveDeleteReferenceCleanup:
             mock_create_service.return_value = mock_service
 
             # Mock successful deletion
-            mock_service.delete_recursive.return_value = {
-                "bucket": "test-bucket",
-                "prefix": "test/",
-                "deleted_count": 2,
-                "failed_count": 0,
-                "warnings": [],
-                "errors": [],
-            }
+            mock_service.delete_recursive.return_value = RecursiveDeleteResult(
+                bucket="test-bucket",
+                prefix="test/",
+                deleted_count=2,
+                failed_count=0,
+            )
 
             result = runner.invoke(cli, ["rm", "-r", "s3://test-bucket/test/"])
 
@@ -294,8 +289,8 @@ class TestRecursiveDeleteReferenceCleanup:
 
         result = service.delete(ObjectKey(bucket="test-bucket", key="test/file.zip.delta"))
 
-        assert result["deleted"]
-        assert result["type"] == "delta"
+        assert result.deleted
+        assert result.type == "delta"
 
     def test_reference_cleanup_intelligence_basic(self):
         """Basic test to verify reference cleanup intelligence is working."""
@@ -328,10 +323,10 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "simple/")
 
         # Should delete both delta and reference since there are no other dependencies
-        assert result["deleted_count"] == 2
-        assert result["deltas_deleted"] == 1
-        assert result["references_deleted"] == 1
-        assert result["failed_count"] == 0
+        assert result.deleted_count == 2
+        assert result.deltas_deleted == 1
+        assert result.references_deleted == 1
+        assert result.failed_count == 0
 
     def test_comprehensive_result_validation(self):
         """Test that all result fields are properly populated."""
@@ -366,31 +361,31 @@ class TestRecursiveDeleteReferenceCleanup:
         result = service.delete_recursive("test-bucket", "mixed/")
 
         # Validate all expected fields are present and have correct types
-        assert isinstance(result["bucket"], str)
-        assert isinstance(result["prefix"], str)
-        assert isinstance(result["deleted_count"], int)
-        assert isinstance(result["failed_count"], int)
-        assert isinstance(result["deltas_deleted"], int)
-        assert isinstance(result["references_deleted"], int)
-        assert isinstance(result["direct_deleted"], int)
-        assert isinstance(result["other_deleted"], int)
-        assert isinstance(result["errors"], list)
-        assert isinstance(result["warnings"], list)
+        assert isinstance(result.bucket, str)
+        assert isinstance(result.prefix, str)
+        assert isinstance(result.deleted_count, int)
+        assert isinstance(result.failed_count, int)
+        assert isinstance(result.deltas_deleted, int)
+        assert isinstance(result.references_deleted, int)
+        assert isinstance(result.direct_deleted, int)
+        assert isinstance(result.other_deleted, int)
+        assert isinstance(result.errors, list)
+        assert isinstance(result.warnings, list)
 
         # Validate counts add up
         total_by_type = (
-            result["deltas_deleted"]
-            + result["references_deleted"]
-            + result["direct_deleted"]
-            + result["other_deleted"]
+            result.deltas_deleted
+            + result.references_deleted
+            + result.direct_deleted
+            + result.other_deleted
         )
-        assert result["deleted_count"] == total_by_type
+        assert result.deleted_count == total_by_type
 
         # Validate specific counts for this scenario
-        assert result["deltas_deleted"] == 1
-        assert result["references_deleted"] == 1
+        assert result.deltas_deleted == 1
+        assert result.references_deleted == 1
         # Direct and other files may be categorized differently
-        assert result["direct_deleted"] + result["other_deleted"] == 2
+        assert result.direct_deleted + result.other_deleted == 2
 
 
 if __name__ == "__main__":

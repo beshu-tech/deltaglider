@@ -1,12 +1,55 @@
 """Core domain models."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 # Metadata key prefix for DeltaGlider
 # AWS S3 automatically adds 'x-amz-meta-' prefix, so our keys become 'x-amz-meta-dg-*'
 METADATA_PREFIX = "dg-"
+
+# Canonical metadata key aliases.
+# Each field maps to all known key formats (current prefixed, legacy underscore, legacy bare,
+# legacy hyphenated). Order matters: first match wins during lookup.
+# Both DeltaMeta.from_dict() and service-layer _meta_value() MUST use these to stay in sync.
+METADATA_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+    "tool": (f"{METADATA_PREFIX}tool", "dg_tool", "tool"),
+    "original_name": (
+        f"{METADATA_PREFIX}original-name", "dg_original_name", "original_name", "original-name",
+    ),
+    "file_sha256": (
+        f"{METADATA_PREFIX}file-sha256", "dg_file_sha256", "file_sha256", "file-sha256",
+    ),
+    "file_size": (
+        f"{METADATA_PREFIX}file-size", "dg_file_size", "file_size", "file-size",
+    ),
+    "created_at": (
+        f"{METADATA_PREFIX}created-at", "dg_created_at", "created_at", "created-at",
+    ),
+    "ref_key": (f"{METADATA_PREFIX}ref-key", "dg_ref_key", "ref_key", "ref-key"),
+    "ref_sha256": (
+        f"{METADATA_PREFIX}ref-sha256", "dg_ref_sha256", "ref_sha256", "ref-sha256",
+    ),
+    "delta_size": (
+        f"{METADATA_PREFIX}delta-size", "dg_delta_size", "delta_size", "delta-size",
+    ),
+    "delta_cmd": (
+        f"{METADATA_PREFIX}delta-cmd", "dg_delta_cmd", "delta_cmd", "delta-cmd",
+    ),
+    "note": (f"{METADATA_PREFIX}note", "dg_note", "note"),
+}
+
+
+def resolve_metadata(metadata: dict[str, str], field: str) -> str | None:
+    """Look up a metadata field using all known key aliases.
+
+    Returns the first non-empty match, or None if not found.
+    """
+    for key in METADATA_KEY_ALIASES[field]:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return value
+    return None
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +73,11 @@ class ObjectKey:
 
     bucket: str
     key: str
+
+    @property
+    def full_key(self) -> str:
+        """Full S3 path: bucket/key."""
+        return f"{self.bucket}/{self.key}"
 
 
 @dataclass(frozen=True)
@@ -101,38 +149,22 @@ class DeltaMeta:
     def from_dict(cls, data: dict[str, str]) -> "DeltaMeta":
         """Create from S3 metadata dict with DeltaGlider namespace prefix."""
 
-        def _get_value(*keys: str, required: bool = True) -> str:
-            for key in keys:
-                if key in data and data[key] != "":
-                    return data[key]
-            if required:
-                raise KeyError(keys[0])
-            return ""
+        def _require(field: str) -> str:
+            value = resolve_metadata(data, field)
+            if value is None:
+                raise KeyError(METADATA_KEY_ALIASES[field][0])
+            return value
 
-        tool = _get_value(f"{METADATA_PREFIX}tool", "dg_tool", "tool")
-        original_name = _get_value(
-            f"{METADATA_PREFIX}original-name", "dg_original_name", "original_name", "original-name"
-        )
-        file_sha = _get_value(
-            f"{METADATA_PREFIX}file-sha256", "dg_file_sha256", "file_sha256", "file-sha256"
-        )
-        file_size_raw = _get_value(
-            f"{METADATA_PREFIX}file-size", "dg_file_size", "file_size", "file-size"
-        )
-        created_at_raw = _get_value(
-            f"{METADATA_PREFIX}created-at", "dg_created_at", "created_at", "created-at"
-        )
-        ref_key = _get_value(f"{METADATA_PREFIX}ref-key", "dg_ref_key", "ref_key", "ref-key")
-        ref_sha = _get_value(
-            f"{METADATA_PREFIX}ref-sha256", "dg_ref_sha256", "ref_sha256", "ref-sha256"
-        )
-        delta_size_raw = _get_value(
-            f"{METADATA_PREFIX}delta-size", "dg_delta_size", "delta_size", "delta-size"
-        )
-        delta_cmd_value = _get_value(
-            f"{METADATA_PREFIX}delta-cmd", "dg_delta_cmd", "delta_cmd", "delta-cmd", required=False
-        )
-        note_value = _get_value(f"{METADATA_PREFIX}note", "dg_note", "note", required=False)
+        tool = _require("tool")
+        original_name = _require("original_name")
+        file_sha = _require("file_sha256")
+        file_size_raw = _require("file_size")
+        created_at_raw = _require("created_at")
+        ref_key = _require("ref_key")
+        ref_sha = _require("ref_sha256")
+        delta_size_raw = _require("delta_size")
+        delta_cmd_value = resolve_metadata(data, "delta_cmd") or ""
+        note_value = resolve_metadata(data, "note") or ""
 
         try:
             file_size = int(file_size_raw)
@@ -198,3 +230,33 @@ class VerifyResult:
     expected_sha256: str
     actual_sha256: str
     message: str
+
+
+@dataclass
+class DeleteResult:
+    """Result of a single delete operation."""
+
+    key: str
+    bucket: str
+    deleted: bool = False
+    type: str = "unknown"
+    warnings: list[str] = field(default_factory=list)
+    original_name: str | None = None
+    dependent_deltas: int = 0
+    cleaned_reference: str | None = None
+
+
+@dataclass
+class RecursiveDeleteResult:
+    """Result of a recursive delete operation."""
+
+    bucket: str
+    prefix: str
+    deleted_count: int = 0
+    failed_count: int = 0
+    deltas_deleted: int = 0
+    references_deleted: int = 0
+    direct_deleted: int = 0
+    other_deleted: int = 0
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)

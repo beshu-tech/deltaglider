@@ -8,6 +8,7 @@ import pytest
 from deltaglider.app.cli.main import create_service
 from deltaglider.client import DeltaGliderClient
 from deltaglider.core import ObjectKey
+from deltaglider.core.models import DeleteResult, RecursiveDeleteResult
 from deltaglider.ports.storage import ObjectHead
 
 
@@ -243,12 +244,12 @@ class TestSingleDeleteCleanup:
         result = service.delete(ObjectKey(bucket="test-bucket", key="releases/app.zip.delta"))
 
         # Verify delta was deleted
-        assert result["deleted"] is True
-        assert result["type"] == "delta"
+        assert result.deleted is True
+        assert result.type == "delta"
 
         # Verify reference.bin cleanup was triggered
-        assert "cleaned_reference" in result
-        assert result["cleaned_reference"] == "releases/reference.bin"
+        assert result.cleaned_reference is not None
+        assert result.cleaned_reference == "releases/reference.bin"
 
         # Verify both files were deleted
         assert mock_storage.delete.call_count == 2
@@ -295,11 +296,11 @@ class TestSingleDeleteCleanup:
         result = service.delete(ObjectKey(bucket="test-bucket", key="releases/app-v1.zip.delta"))
 
         # Verify delta was deleted
-        assert result["deleted"] is True
-        assert result["type"] == "delta"
+        assert result.deleted is True
+        assert result.type == "delta"
 
         # Verify reference.bin was NOT cleaned up
-        assert "cleaned_reference" not in result
+        assert result.cleaned_reference is None
 
         # Verify only the delta was deleted, not reference.bin
         assert mock_storage.delete.call_count == 1
@@ -342,11 +343,11 @@ class TestSingleDeleteCleanup:
         result = service.delete(ObjectKey(bucket="test-bucket", key="releases/app.zip.delta"))
 
         # Verify delta was deleted
-        assert result["deleted"] is True
-        assert result["type"] == "delta"
+        assert result.deleted is True
+        assert result.type == "delta"
 
         # Verify no reference cleanup (since it didn't exist)
-        assert "cleaned_reference" not in result
+        assert result.cleaned_reference is None
 
         # Only delta should be deleted
         assert mock_storage.delete.call_count == 1
@@ -395,7 +396,7 @@ class TestSingleDeleteCleanup:
         result = service.delete(ObjectKey(bucket="test-bucket", key="releases/1.0/app.zip.delta"))
 
         # Should clean up only 1.0/reference.bin
-        assert result["cleaned_reference"] == "releases/1.0/reference.bin"
+        assert result.cleaned_reference == "releases/1.0/reference.bin"
 
         # Verify correct files deleted
         delete_calls = [call[0][0] for call in mock_storage.delete.call_args_list]
@@ -436,9 +437,9 @@ class TestRecursiveDeleteCleanup:
         result = service.delete_recursive("test-bucket", "data/")
 
         # Should delete both delta and reference
-        assert result["deleted_count"] == 2
-        assert result["deltas_deleted"] == 1
-        assert result["references_deleted"] == 1
+        assert result.deleted_count == 2
+        assert result.deltas_deleted == 1
+        assert result.references_deleted == 1
 
 
 if __name__ == "__main__":

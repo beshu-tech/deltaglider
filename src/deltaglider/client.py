@@ -40,6 +40,7 @@ from .client_operations.stats import StatsMode
 
 from .core import DeltaService, DeltaSpace, ObjectKey
 from .core.errors import NotFoundError
+from .core.models import DeleteResult
 from .core.object_listing import ObjectListing, list_objects_page
 from .core.s3_uri import parse_s3_url
 from .response_builders import (
@@ -67,7 +68,6 @@ class DeltaGliderClient:
         """Initialize client with service."""
         self.service = service
         self.endpoint_url = endpoint_url
-        self._multipart_uploads: dict[str, Any] = {}  # Track multipart uploads
         # Session-scoped bucket statistics cache (cleared with the client lifecycle)
         self._bucket_stats_cache: dict[str, dict[str, BucketStats]] = {}
 
@@ -464,19 +464,17 @@ class DeltaGliderClient:
 
         # Build DeltaGlider-specific info
         deltaglider_info: dict[str, Any] = {
-            "Type": delete_result.get("type"),
-            "Deleted": delete_result.get("deleted", False),
+            "Type": delete_result.type,
+            "Deleted": delete_result.deleted,
         }
 
         # Add warnings if any
-        warnings = delete_result.get("warnings")
-        if warnings:
-            deltaglider_info["Warnings"] = warnings
+        if delete_result.warnings:
+            deltaglider_info["Warnings"] = delete_result.warnings
 
         # Add dependent delta count for references
-        dependent_deltas = delete_result.get("dependent_deltas")
-        if dependent_deltas:
-            deltaglider_info["DependentDeltas"] = dependent_deltas
+        if delete_result.dependent_deltas:
+            deltaglider_info["DependentDeltas"] = delete_result.dependent_deltas
 
         # Return as dict[str, Any] for public API (TypedDict is a dict at runtime!)
         response = cast(
@@ -518,21 +516,21 @@ class DeltaGliderClient:
                 deleted_item = {"Key": key}
                 if actual_key != key:
                     deleted_item["StoredKey"] = actual_key
-                if delete_result.get("type"):
-                    deleted_item["Type"] = delete_result["type"]
-                if delete_result.get("warnings"):
-                    deleted_item["Warnings"] = delete_result["warnings"]
+                if delete_result.type:
+                    deleted_item["Type"] = delete_result.type
+                if delete_result.warnings:
+                    deleted_item["Warnings"] = delete_result.warnings
 
                 deleted.append(deleted_item)
 
                 # Track delta-specific info
-                if delete_result.get("type") in ["delta", "reference"]:
+                if delete_result.type in ("delta", "reference"):
                     delta_info.append(
                         {
                             "Key": key,
                             "StoredKey": actual_key,
-                            "Type": delete_result["type"],
-                            "DependentDeltas": delete_result.get("dependent_deltas", 0),
+                            "Type": delete_result.type,
+                            "DependentDeltas": delete_result.dependent_deltas,
                         }
                     )
 
@@ -604,22 +602,22 @@ class DeltaGliderClient:
                     continue
 
                 try:
-                    actual_key, delete_result = delete_with_delta_suffix(
+                    actual_key, single_del = delete_with_delta_suffix(
                         self.service, Bucket, candidate
                     )
-                    if delete_result.get("deleted"):
+                    if single_del.deleted:
                         single_results.append(
                             {
                                 "requested_key": candidate,
                                 "actual_key": actual_key,
-                                "result": delete_result,
+                                "result": single_del,
                             }
                         )
                 except Exception as e:
                     single_errors.append(f"Failed to delete {candidate}: {e}")
 
         # Use core service's delta-aware recursive delete for remaining objects
-        delete_result = self.service.delete_recursive(Bucket, Prefix)
+        recursive_result = self.service.delete_recursive(Bucket, Prefix)
 
         # Aggregate results
         single_deleted_count = len(single_results)
@@ -628,37 +626,32 @@ class DeltaGliderClient:
         single_warnings: list[str] = []
 
         for item in single_results:
-            result = item["result"]
+            dr: DeleteResult = item["result"]
             requested_key = item["requested_key"]
             actual_key = item["actual_key"]
-            result_type = result.get("type", "other")
-            if result_type not in single_counts:
-                result_type = "other"
+            result_type = dr.type if dr.type in single_counts else "other"
             single_counts[result_type] += 1
-            detail = {
+            detail: dict[str, Any] = {
                 "Key": requested_key,
-                "Type": result.get("type"),
-                "DependentDeltas": result.get("dependent_deltas", 0),
-                "Warnings": result.get("warnings", []),
+                "Type": dr.type,
+                "DependentDeltas": dr.dependent_deltas,
+                "Warnings": dr.warnings,
             }
             if actual_key != requested_key:
                 detail["StoredKey"] = actual_key
             single_details.append(detail)
-            warnings = result.get("warnings")
-            if warnings:
-                single_warnings.extend(warnings)
+            if dr.warnings:
+                single_warnings.extend(dr.warnings)
 
-        deleted_count = cast(int, delete_result.get("deleted_count", 0)) + single_deleted_count
-        failed_count = cast(int, delete_result.get("failed_count", 0)) + len(single_errors)
+        deleted_count = recursive_result.deleted_count + single_deleted_count
+        failed_count = recursive_result.failed_count + len(single_errors)
 
-        deltas_deleted = cast(int, delete_result.get("deltas_deleted", 0)) + single_counts["delta"]
-        references_deleted = (
-            cast(int, delete_result.get("references_deleted", 0)) + single_counts["reference"]
-        )
-        direct_deleted = cast(int, delete_result.get("direct_deleted", 0)) + single_counts["direct"]
-        other_deleted = cast(int, delete_result.get("other_deleted", 0)) + single_counts["other"]
+        deltas_deleted = recursive_result.deltas_deleted + single_counts["delta"]
+        references_deleted = recursive_result.references_deleted + single_counts["reference"]
+        direct_deleted = recursive_result.direct_deleted + single_counts["direct"]
+        other_deleted = recursive_result.other_deleted + single_counts["other"]
 
-        response = {
+        response: dict[str, Any] = {
             "ResponseMetadata": {
                 "HTTPStatusCode": 200,
             },
@@ -672,13 +665,11 @@ class DeltaGliderClient:
             },
         }
 
-        errors = delete_result.get("errors")
-        if errors:
-            response["Errors"] = cast(list[str], errors)
+        if recursive_result.errors:
+            response["Errors"] = recursive_result.errors
 
-        warnings = delete_result.get("warnings")
-        if warnings:
-            response["Warnings"] = cast(list[str], warnings)
+        if recursive_result.warnings:
+            response["Warnings"] = recursive_result.warnings
 
         if single_errors:
             errors_list = cast(list[str], response.setdefault("Errors", []))

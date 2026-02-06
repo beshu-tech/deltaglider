@@ -22,6 +22,7 @@ from ...adapters import (
     XdeltaAdapter,
 )
 from ...core import DeltaService, ObjectKey
+from ...core.config import DeltaGliderConfig
 from ...ports import MetricsPort
 from ...ports.cache import CachePort
 from .aws_compat import (
@@ -41,11 +42,25 @@ def create_service(
     endpoint_url: str | None = None,
     region: str | None = None,
     profile: str | None = None,
+    *,
+    config: DeltaGliderConfig | None = None,
 ) -> DeltaService:
-    """Create service with wired adapters."""
-    # Get config from environment
-    max_ratio = float(os.environ.get("DG_MAX_RATIO", "0.5"))
-    metrics_type = os.environ.get("DG_METRICS", "logging")  # Options: noop, logging, cloudwatch
+    """Create service with wired adapters.
+
+    Args:
+        log_level: Logging level (overridden by config.log_level if config provided).
+        endpoint_url: S3 endpoint URL (overridden by config if provided).
+        region: AWS region (overridden by config if provided).
+        profile: AWS profile (overridden by config if provided).
+        config: Optional pre-built config. If None, built from env vars + explicit params.
+    """
+    if config is None:
+        config = DeltaGliderConfig.from_env(
+            log_level=log_level,
+            endpoint_url=endpoint_url,
+            region=region,
+            profile=profile,
+        )
 
     # SECURITY: Always use ephemeral process-isolated cache
     cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
@@ -53,62 +68,59 @@ def create_service(
     atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
 
     # Set AWS environment variables if provided (for compatibility with other AWS tools)
-    if endpoint_url:
-        os.environ["AWS_ENDPOINT_URL"] = endpoint_url
-    if region:
-        os.environ["AWS_DEFAULT_REGION"] = region
-    if profile:
-        os.environ["AWS_PROFILE"] = profile
+    if config.endpoint_url:
+        os.environ["AWS_ENDPOINT_URL"] = config.endpoint_url
+    if config.region:
+        os.environ["AWS_DEFAULT_REGION"] = config.region
+    if config.profile:
+        os.environ["AWS_PROFILE"] = config.profile
 
     # Build boto3_kwargs for explicit parameter passing (preferred over env vars)
     boto3_kwargs: dict[str, Any] = {}
-    if region:
-        boto3_kwargs["region_name"] = region
+    if config.region:
+        boto3_kwargs["region_name"] = config.region
 
     # Create adapters
     hasher = Sha256Adapter()
-    storage = S3StorageAdapter(endpoint_url=endpoint_url, boto3_kwargs=boto3_kwargs)
+    storage = S3StorageAdapter(endpoint_url=config.endpoint_url, boto3_kwargs=boto3_kwargs)
     diff = XdeltaAdapter()
 
     # SECURITY: Configurable cache with encryption and backend selection
     from deltaglider.adapters import ContentAddressedCache, EncryptedCache, MemoryCache
 
-    # Select backend: memory or filesystem
-    cache_backend = os.environ.get("DG_CACHE_BACKEND", "filesystem")  # Options: filesystem, memory
     base_cache: CachePort
-    if cache_backend == "memory":
-        max_size_mb = int(os.environ.get("DG_CACHE_MEMORY_SIZE_MB", "100"))
-        base_cache = MemoryCache(hasher, max_size_mb=max_size_mb, temp_dir=cache_dir)
+    if config.cache_backend == "memory":
+        base_cache = MemoryCache(hasher, max_size_mb=config.cache_memory_size_mb, temp_dir=cache_dir)
     else:
-        # Filesystem-backed with Content-Addressed Storage
         base_cache = ContentAddressedCache(cache_dir, hasher)
 
     # Always apply encryption with ephemeral keys (security hardening)
-    # Encryption key is optional via DG_CACHE_ENCRYPTION_KEY (ephemeral if not set)
     cache: CachePort = EncryptedCache.from_env(base_cache)
 
     clock = UtcClockAdapter()
-    logger = StdLoggerAdapter(level=log_level)
+    logger = StdLoggerAdapter(level=config.log_level)
 
     # Create metrics adapter based on configuration
     metrics: MetricsPort
-    if metrics_type == "cloudwatch":
-        # Import here to avoid dependency if not used
+    if config.metrics_type == "cloudwatch":
         from ...adapters.metrics_cloudwatch import CloudWatchMetricsAdapter
 
         metrics = CloudWatchMetricsAdapter(
-            namespace=os.environ.get("DG_METRICS_NAMESPACE", "DeltaGlider"),
-            region=region,
-            endpoint_url=endpoint_url if endpoint_url and "localhost" in endpoint_url else None,
+            namespace=config.metrics_namespace,
+            region=config.region,
+            endpoint_url=(
+                config.endpoint_url
+                if config.endpoint_url and "localhost" in config.endpoint_url
+                else None
+            ),
         )
-    elif metrics_type == "logging":
+    elif config.metrics_type == "logging":
         from ...adapters.metrics_cloudwatch import LoggingMetricsAdapter
 
-        metrics = LoggingMetricsAdapter(log_level=log_level)
+        metrics = LoggingMetricsAdapter(log_level=config.log_level)
     else:
         metrics = NoopMetricsAdapter()
 
-    # Create service
     return DeltaService(
         storage=storage,
         diff=diff,
@@ -117,7 +129,7 @@ def create_service(
         clock=clock,
         logger=logger,
         metrics=metrics,
-        max_ratio=max_ratio,
+        max_ratio=config.max_ratio,
     )
 
 
@@ -489,24 +501,24 @@ def rm(
 
                 # Report the results
                 if not quiet:
-                    if result["deleted_count"] == 0:
+                    if result.deleted_count == 0:
                         click.echo(f"delete: No objects found with prefix: s3://{bucket}/{prefix}")
                     else:
-                        click.echo(f"Deleted {result['deleted_count']} object(s)")
+                        click.echo(f"Deleted {result.deleted_count} object(s)")
 
                         # Show warnings if any references were kept
-                        for warning in result.get("warnings", []):
+                        for warning in result.warnings:
                             if "Kept reference" in warning:
                                 click.echo(
                                     f"Keeping reference file (still in use): s3://{bucket}/{warning.split()[2]}"
                                 )
 
                 # Report any errors
-                if result["failed_count"] > 0:
-                    for error in result.get("errors", []):
+                if result.failed_count > 0:
+                    for error in result.errors:
                         click.echo(f"Error: {error}", err=True)
 
-                    if result["failed_count"] > 0:
+                    if result.failed_count > 0:
                         sys.exit(1)
 
     except Exception as e:
