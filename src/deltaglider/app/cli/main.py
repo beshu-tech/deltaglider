@@ -90,7 +90,9 @@ def create_service(
 
     base_cache: CachePort
     if config.cache_backend == "memory":
-        base_cache = MemoryCache(hasher, max_size_mb=config.cache_memory_size_mb, temp_dir=cache_dir)
+        base_cache = MemoryCache(
+            hasher, max_size_mb=config.cache_memory_size_mb, temp_dir=cache_dir
+        )
     else:
         base_cache = ContentAddressedCache(cache_dir, hasher)
 

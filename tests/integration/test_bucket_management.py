@@ -369,9 +369,7 @@ class TestBucketManagement:
         }
 
         client = DeltaGliderClient(service)
-        response = client.put_bucket_acl(
-            Bucket="test-bucket", AccessControlPolicy=policy
-        )
+        response = client.put_bucket_acl(Bucket="test-bucket", AccessControlPolicy=policy)
 
         assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
         mock_boto3_client.put_bucket_acl.assert_called_once_with(

@@ -666,9 +666,7 @@ class DeltaService:
 
         return result
 
-    def _delete_reference(
-        self, object_key: ObjectKey, full_key: str, result: DeleteResult
-    ) -> None:
+    def _delete_reference(self, object_key: ObjectKey, full_key: str, result: DeleteResult) -> None:
         """Handle deletion of a reference.bin file."""
         prefix = object_key.key.rsplit("/", 1)[0] if "/" in object_key.key else ""
         dependent_deltas = []
