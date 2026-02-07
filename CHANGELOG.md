@@ -5,7 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.1.0] - 2025-02-07
+
+### Added
+- **Bucket ACL Management**: New `put_bucket_acl()` and `get_bucket_acl()` methods
+  - boto3-compatible passthrough to native S3 ACL operations
+  - Supports canned ACLs (`private`, `public-read`, `public-read-write`, `authenticated-read`)
+  - Supports grant-based ACLs (`GrantRead`, `GrantWrite`, `GrantFullControl`, etc.)
+  - Supports full `AccessControlPolicy` dict for fine-grained control
+  - SDK method count increased from 21 to 23
+- **New CLI Commands**: `deltaglider put-bucket-acl` and `deltaglider get-bucket-acl`
+  - Mirrors `aws s3api put-bucket-acl` / `get-bucket-acl` syntax
+  - Accepts bucket name or `s3://bucket` URL format
+  - JSON output for `get-bucket-acl` (compatible with AWS CLI)
+  - Supports `--endpoint-url`, `--region`, `--profile` flags
+- **Docker Publishing**: Added GitHub Actions workflow for multi-arch Docker image builds (amd64/arm64)
+
+### Changed
+- **Refactor**: Extracted `DeltaGliderConfig` dataclass for centralized configuration management
+- **Refactor**: Introduced typed `DeleteResult` and `RecursiveDeleteResult` dataclasses replacing raw dicts
+- **Refactor**: Centralized S3 metadata key aliases into `core/models.py` constants
+- **Refactor**: Extracted helper methods in `DeltaService` for improved readability
+
+### Fixed
+- Removed unused imports flagged by ruff in test files
+
+### Documentation
+- Updated BOTO3_COMPATIBILITY.md (coverage 20% → 23%)
+- Updated AWS S3 CLI compatibility docs with ACL command examples
+- Refreshed README with dark mode logo and streamlined content
+- Cleaned up SDK documentation and examples
+
+## [6.0.0] - 2025-10-17
 
 ### Added
 - **EC2 Region Detection & Cost Optimization**
@@ -34,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DeltaService API Enhancement**: Added `override_name` parameter to `put()` method
   - Allows specifying destination filename independently of source filesystem path
   - Enables proper S3-to-S3 transfers without filesystem renaming tricks
+- **Rehydration & Purge**: Automatic rehydration of delta-compressed files for presigned URL access
+  - New `deltaglider purge` CLI command to clean expired temporary files
+- **Metadata Namespace**: Centralized `dg-` prefixed metadata keys for all DeltaGlider metadata
+- **S3-Based Stats Caching**: Bucket statistics cached in S3 with automatic invalidation
 
 ### Fixed
 - **Critical**: S3-to-S3 migration now preserves original filenames
@@ -240,6 +275,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delta compression for versioned artifacts
 - 99%+ compression for similar files
 
+[6.1.0]: https://github.com/beshu-tech/deltaglider/compare/v6.0.2...v6.1.0
+[6.0.0]: https://github.com/beshu-tech/deltaglider/compare/v5.1.1...v6.0.0
 [5.1.0]: https://github.com/beshu-tech/deltaglider/compare/v5.0.3...v5.1.0
 [5.0.3]: https://github.com/beshu-tech/deltaglider/compare/v5.0.1...v5.0.3
 [5.0.1]: https://github.com/beshu-tech/deltaglider/compare/v5.0.0...v5.0.1
