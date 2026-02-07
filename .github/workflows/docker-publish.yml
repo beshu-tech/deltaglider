@@ -65,8 +65,8 @@ jobs:
             type=semver,pattern={{major}}
             # For PRs: tag as pr-<number>
             type=ref,event=pr
-            # Always include git sha for traceability
-            type=sha,prefix={{branch}}-
+            # Include git sha for traceability (only on branch pushes, not tags)
+            type=sha,prefix={{branch}}-,enable=${{ startsWith(github.ref, 'refs/heads/') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
