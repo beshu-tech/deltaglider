@@ -8,7 +8,6 @@ import pytest
 from deltaglider.app.cli.main import create_service
 from deltaglider.client import DeltaGliderClient
 from deltaglider.core import ObjectKey
-from deltaglider.core.models import DeleteResult, RecursiveDeleteResult
 from deltaglider.ports.storage import ObjectHead
 
 

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from deltaglider.app.cli.main import create_service
-from deltaglider.core.models import DeleteResult, RecursiveDeleteResult
+from deltaglider.core.models import RecursiveDeleteResult
 from deltaglider.ports.storage import ObjectHead
 
 
