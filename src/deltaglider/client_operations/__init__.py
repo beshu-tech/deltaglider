@@ -8,7 +8,7 @@ This package contains modular operation implementations:
 """
 
 from .batch import download_batch, upload_batch, upload_chunked
-from .bucket import create_bucket, delete_bucket, list_buckets
+from .bucket import create_bucket, delete_bucket, get_bucket_acl, list_buckets, put_bucket_acl
 from .presigned import generate_presigned_post, generate_presigned_url
 from .stats import (
     estimate_compression,
@@ -21,7 +21,9 @@ __all__ = [
     # Bucket operations
     "create_bucket",
     "delete_bucket",
+    "get_bucket_acl",
     "list_buckets",
+    "put_bucket_acl",
     # Presigned operations
     "generate_presigned_url",
     "generate_presigned_post",

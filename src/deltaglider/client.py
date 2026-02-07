@@ -28,9 +28,11 @@ from .client_operations import (
     find_similar_files as _find_similar_files,
     generate_presigned_post as _generate_presigned_post,
     generate_presigned_url as _generate_presigned_url,
+    get_bucket_acl as _get_bucket_acl,
     get_bucket_stats as _get_bucket_stats,
     get_object_info as _get_object_info,
     list_buckets as _list_buckets,
+    put_bucket_acl as _put_bucket_acl,
     upload_batch as _upload_batch,
     upload_chunked as _upload_chunked,
 )
@@ -1119,6 +1121,63 @@ class DeltaGliderClient:
             ...     print(bucket['Name'])
         """
         return _list_buckets(self, **kwargs)
+
+    def put_bucket_acl(
+        self,
+        Bucket: str,
+        ACL: str | None = None,
+        AccessControlPolicy: dict[str, Any] | None = None,
+        GrantFullControl: str | None = None,
+        GrantRead: str | None = None,
+        GrantReadACP: str | None = None,
+        GrantWrite: str | None = None,
+        GrantWriteACP: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Set the ACL for an S3 bucket (boto3-compatible passthrough).
+
+        Args:
+            Bucket: Bucket name
+            ACL: Canned ACL (private, public-read, public-read-write, authenticated-read)
+            AccessControlPolicy: Full ACL policy dict
+            GrantFullControl: Grants full control to the grantee
+            GrantRead: Allows grantee to list objects in the bucket
+            GrantReadACP: Allows grantee to read the bucket ACL
+            GrantWrite: Allows grantee to create objects in the bucket
+            GrantWriteACP: Allows grantee to write the ACL for the bucket
+            **kwargs: Additional S3 parameters (for compatibility)
+
+        Returns:
+            Response dict with status
+        """
+        return _put_bucket_acl(
+            self,
+            Bucket,
+            ACL=ACL,
+            AccessControlPolicy=AccessControlPolicy,
+            GrantFullControl=GrantFullControl,
+            GrantRead=GrantRead,
+            GrantReadACP=GrantReadACP,
+            GrantWrite=GrantWrite,
+            GrantWriteACP=GrantWriteACP,
+            **kwargs,
+        )
+
+    def get_bucket_acl(
+        self,
+        Bucket: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Get the ACL for an S3 bucket (boto3-compatible passthrough).
+
+        Args:
+            Bucket: Bucket name
+            **kwargs: Additional S3 parameters (for compatibility)
+
+        Returns:
+            Response dict with Owner and Grants
+        """
+        return _get_bucket_acl(self, Bucket, **kwargs)
 
     def _parse_tagging(self, tagging: str) -> dict[str, str]:
         """Parse URL-encoded tagging string to dict."""

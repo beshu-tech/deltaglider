@@ -308,6 +308,150 @@ class TestBucketManagement:
         with pytest.raises(NotImplementedError):
             client.list_buckets()
 
+    def test_put_bucket_acl_with_canned_acl(self):
+        """Test setting a canned ACL on a bucket."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.put_bucket_acl.return_value = None
+        mock_storage.client = mock_boto3_client
+
+        client = DeltaGliderClient(service)
+        response = client.put_bucket_acl(Bucket="test-bucket", ACL="public-read")
+
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+        mock_boto3_client.put_bucket_acl.assert_called_once_with(
+            Bucket="test-bucket", ACL="public-read"
+        )
+
+    def test_put_bucket_acl_with_grants(self):
+        """Test setting ACL with grant parameters."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.put_bucket_acl.return_value = None
+        mock_storage.client = mock_boto3_client
+
+        client = DeltaGliderClient(service)
+        response = client.put_bucket_acl(
+            Bucket="test-bucket",
+            GrantRead="id=12345",
+            GrantWrite="id=67890",
+        )
+
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+        mock_boto3_client.put_bucket_acl.assert_called_once_with(
+            Bucket="test-bucket", GrantRead="id=12345", GrantWrite="id=67890"
+        )
+
+    def test_put_bucket_acl_with_access_control_policy(self):
+        """Test setting ACL with a full AccessControlPolicy dict."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.put_bucket_acl.return_value = None
+        mock_storage.client = mock_boto3_client
+
+        policy = {
+            "Grants": [
+                {
+                    "Grantee": {"Type": "CanonicalUser", "ID": "abc123"},
+                    "Permission": "FULL_CONTROL",
+                }
+            ],
+            "Owner": {"ID": "abc123"},
+        }
+
+        client = DeltaGliderClient(service)
+        response = client.put_bucket_acl(
+            Bucket="test-bucket", AccessControlPolicy=policy
+        )
+
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+        mock_boto3_client.put_bucket_acl.assert_called_once_with(
+            Bucket="test-bucket", AccessControlPolicy=policy
+        )
+
+    def test_put_bucket_acl_failure(self):
+        """Test that put_bucket_acl raises RuntimeError on boto3 failure."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.put_bucket_acl.side_effect = Exception("AccessDenied")
+        mock_storage.client = mock_boto3_client
+
+        client = DeltaGliderClient(service)
+
+        with pytest.raises(RuntimeError, match="Failed to set bucket ACL"):
+            client.put_bucket_acl(Bucket="test-bucket", ACL="public-read")
+
+    def test_put_bucket_acl_no_boto3_client(self):
+        """Test that put_bucket_acl raises NotImplementedError without boto3 client."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+        delattr(mock_storage, "client")
+
+        client = DeltaGliderClient(service)
+
+        with pytest.raises(NotImplementedError):
+            client.put_bucket_acl(Bucket="test-bucket", ACL="private")
+
+    def test_get_bucket_acl_success(self):
+        """Test getting bucket ACL successfully."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        acl_response = {
+            "Owner": {"DisplayName": "test-user", "ID": "abc123"},
+            "Grants": [
+                {
+                    "Grantee": {
+                        "Type": "CanonicalUser",
+                        "DisplayName": "test-user",
+                        "ID": "abc123",
+                    },
+                    "Permission": "FULL_CONTROL",
+                }
+            ],
+        }
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.get_bucket_acl.return_value = acl_response
+        mock_storage.client = mock_boto3_client
+
+        client = DeltaGliderClient(service)
+        response = client.get_bucket_acl(Bucket="test-bucket")
+
+        assert response["Owner"]["DisplayName"] == "test-user"
+        assert len(response["Grants"]) == 1
+        assert response["Grants"][0]["Permission"] == "FULL_CONTROL"
+        mock_boto3_client.get_bucket_acl.assert_called_once_with(Bucket="test-bucket")
+
+    def test_get_bucket_acl_failure(self):
+        """Test that get_bucket_acl raises RuntimeError on boto3 failure."""
+        service = create_service()
+        mock_storage = Mock()
+        service.storage = mock_storage
+
+        mock_boto3_client = Mock()
+        mock_boto3_client.get_bucket_acl.side_effect = Exception("NoSuchBucket")
+        mock_storage.client = mock_boto3_client
+
+        client = DeltaGliderClient(service)
+
+        with pytest.raises(RuntimeError, match="Failed to get bucket ACL"):
+            client.get_bucket_acl(Bucket="nonexistent-bucket")
+
     def test_complete_bucket_lifecycle(self):
         """Test complete bucket lifecycle: create, use, delete."""
         service = create_service()

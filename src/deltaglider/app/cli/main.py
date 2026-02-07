@@ -1053,6 +1053,151 @@ def purge(
         sys.exit(1)
 
 
+@cli.command("put-bucket-acl")
+@click.argument("bucket")
+@click.option(
+    "--acl",
+    type=click.Choice(["private", "public-read", "public-read-write", "authenticated-read"]),
+    help="Canned ACL to apply",
+)
+@click.option("--grant-full-control", help="Grants full control (e.g., id=account-id)")
+@click.option("--grant-read", help="Allows grantee to list objects (e.g., id=account-id)")
+@click.option("--grant-read-acp", help="Allows grantee to read the bucket ACL")
+@click.option("--grant-write", help="Allows grantee to create objects in the bucket")
+@click.option("--grant-write-acp", help="Allows grantee to write the ACL for the bucket")
+@click.option("--access-control-policy", help="Full ACL policy as JSON string")
+@click.option("--endpoint-url", help="Override S3 endpoint URL")
+@click.option("--region", help="AWS region")
+@click.option("--profile", help="AWS profile to use")
+@click.pass_obj
+def put_bucket_acl(
+    service: DeltaService,
+    bucket: str,
+    acl: str | None,
+    grant_full_control: str | None,
+    grant_read: str | None,
+    grant_read_acp: str | None,
+    grant_write: str | None,
+    grant_write_acp: str | None,
+    access_control_policy: str | None,
+    endpoint_url: str | None,
+    region: str | None,
+    profile: str | None,
+) -> None:
+    """Set the access control list (ACL) for an S3 bucket.
+
+    BUCKET can be specified as:
+      - s3://bucket-name
+      - bucket-name
+
+    Examples:
+        deltaglider put-bucket-acl my-bucket --acl private
+        deltaglider put-bucket-acl my-bucket --acl public-read
+        deltaglider put-bucket-acl my-bucket --grant-read id=12345
+    """
+    from ...client import DeltaGliderClient
+
+    # Recreate service with AWS parameters if provided
+    if endpoint_url or region or profile:
+        service = create_service(
+            log_level=os.environ.get("DG_LOG_LEVEL", "INFO"),
+            endpoint_url=endpoint_url,
+            region=region,
+            profile=profile,
+        )
+
+    try:
+        # Parse bucket from S3 URL if needed
+        if is_s3_path(bucket):
+            bucket, _prefix = parse_s3_url(bucket)
+
+        if not bucket:
+            click.echo("Error: Invalid bucket name", err=True)
+            sys.exit(1)
+
+        client = DeltaGliderClient(service=service)
+
+        kwargs: dict[str, Any] = {}
+        if acl is not None:
+            kwargs["ACL"] = acl
+        if grant_full_control is not None:
+            kwargs["GrantFullControl"] = grant_full_control
+        if grant_read is not None:
+            kwargs["GrantRead"] = grant_read
+        if grant_read_acp is not None:
+            kwargs["GrantReadACP"] = grant_read_acp
+        if grant_write is not None:
+            kwargs["GrantWrite"] = grant_write
+        if grant_write_acp is not None:
+            kwargs["GrantWriteACP"] = grant_write_acp
+        if access_control_policy is not None:
+            kwargs["AccessControlPolicy"] = json.loads(access_control_policy)
+
+        client.put_bucket_acl(Bucket=bucket, **kwargs)
+        click.echo(f"ACL updated for bucket: {bucket}")
+
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: Invalid JSON for --access-control-policy: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command("get-bucket-acl")
+@click.argument("bucket")
+@click.option("--endpoint-url", help="Override S3 endpoint URL")
+@click.option("--region", help="AWS region")
+@click.option("--profile", help="AWS profile to use")
+@click.pass_obj
+def get_bucket_acl(
+    service: DeltaService,
+    bucket: str,
+    endpoint_url: str | None,
+    region: str | None,
+    profile: str | None,
+) -> None:
+    """Get the access control list (ACL) for an S3 bucket.
+
+    BUCKET can be specified as:
+      - s3://bucket-name
+      - bucket-name
+
+    Examples:
+        deltaglider get-bucket-acl my-bucket
+        deltaglider get-bucket-acl s3://my-bucket
+    """
+    from ...client import DeltaGliderClient
+
+    # Recreate service with AWS parameters if provided
+    if endpoint_url or region or profile:
+        service = create_service(
+            log_level=os.environ.get("DG_LOG_LEVEL", "INFO"),
+            endpoint_url=endpoint_url,
+            region=region,
+            profile=profile,
+        )
+
+    try:
+        # Parse bucket from S3 URL if needed
+        if is_s3_path(bucket):
+            bucket, _prefix = parse_s3_url(bucket)
+
+        if not bucket:
+            click.echo("Error: Invalid bucket name", err=True)
+            sys.exit(1)
+
+        client = DeltaGliderClient(service=service)
+        response = client.get_bucket_acl(Bucket=bucket)
+
+        # Output as JSON like aws s3api get-bucket-acl
+        click.echo(json.dumps(response, indent=2, default=str))
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 def main() -> None:
     """Main entry point."""
     cli()

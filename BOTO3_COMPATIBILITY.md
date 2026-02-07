@@ -2,7 +2,7 @@
 
 DeltaGlider implements a **subset** of boto3's S3 client API, focusing on the most commonly used operations. This is **not** a 100% drop-in replacement, but covers the core functionality needed for most use cases.
 
-## ✅ Implemented Methods (21 core methods)
+## ✅ Implemented Methods (23 core methods)
 
 ### Object Operations
 - ✅ `put_object()` - Upload objects (with automatic delta compression)
@@ -17,6 +17,8 @@ DeltaGlider implements a **subset** of boto3's S3 client API, focusing on the mo
 - ✅ `create_bucket()` - Create buckets
 - ✅ `delete_bucket()` - Delete empty buckets
 - ✅ `list_buckets()` - List all buckets
+- ✅ `put_bucket_acl()` - Set bucket ACL (passthrough to S3)
+- ✅ `get_bucket_acl()` - Get bucket ACL (passthrough to S3)
 
 ### Presigned URLs
 - ✅ `generate_presigned_url()` - Generate presigned URLs
@@ -46,8 +48,6 @@ DeltaGlider implements a **subset** of boto3's S3 client API, focusing on the mo
 - ❌ `list_parts()`
 
 ### Access Control (ACL)
-- ❌ `get_bucket_acl()`
-- ❌ `put_bucket_acl()`
 - ❌ `get_object_acl()`
 - ❌ `put_object_acl()`
 - ❌ `get_public_access_block()`
@@ -135,9 +135,9 @@ DeltaGlider implements a **subset** of boto3's S3 client API, focusing on the mo
 
 ## Coverage Analysis
 
-**Implemented:** ~21 methods
+**Implemented:** ~23 methods
 **Total boto3 S3 methods:** ~100+ methods
-**Coverage:** ~20%
+**Coverage:** ~23%
 
 ## What's Covered
 

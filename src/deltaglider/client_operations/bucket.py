@@ -4,6 +4,8 @@ This module contains boto3-compatible bucket operations:
 - create_bucket
 - delete_bucket
 - list_buckets
+- put_bucket_acl
+- get_bucket_acl
 """
 
 from typing import Any
@@ -173,3 +175,101 @@ def list_buckets(
             raise RuntimeError(f"Failed to list buckets: {e}") from e
     else:
         raise NotImplementedError("Storage adapter does not support bucket listing")
+
+
+def put_bucket_acl(
+    client: Any,  # DeltaGliderClient (avoiding circular import)
+    Bucket: str,
+    ACL: str | None = None,
+    AccessControlPolicy: dict[str, Any] | None = None,
+    GrantFullControl: str | None = None,
+    GrantRead: str | None = None,
+    GrantReadACP: str | None = None,
+    GrantWrite: str | None = None,
+    GrantWriteACP: str | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Set the ACL for an S3 bucket (boto3-compatible passthrough).
+
+    Args:
+        client: DeltaGliderClient instance
+        Bucket: Bucket name
+        ACL: Canned ACL (private, public-read, public-read-write, authenticated-read)
+        AccessControlPolicy: Full ACL policy dict
+        GrantFullControl: Grants full control to the grantee
+        GrantRead: Allows grantee to list objects in the bucket
+        GrantReadACP: Allows grantee to read the bucket ACL
+        GrantWrite: Allows grantee to create objects in the bucket
+        GrantWriteACP: Allows grantee to write the ACL for the bucket
+        **kwargs: Additional S3 parameters (for compatibility)
+
+    Returns:
+        Response dict with status
+
+    Example:
+        >>> client = create_client()
+        >>> client.put_bucket_acl(Bucket='my-bucket', ACL='public-read')
+    """
+    storage_adapter = client.service.storage
+
+    if hasattr(storage_adapter, "client"):
+        try:
+            params: dict[str, Any] = {"Bucket": Bucket}
+            if ACL is not None:
+                params["ACL"] = ACL
+            if AccessControlPolicy is not None:
+                params["AccessControlPolicy"] = AccessControlPolicy
+            if GrantFullControl is not None:
+                params["GrantFullControl"] = GrantFullControl
+            if GrantRead is not None:
+                params["GrantRead"] = GrantRead
+            if GrantReadACP is not None:
+                params["GrantReadACP"] = GrantReadACP
+            if GrantWrite is not None:
+                params["GrantWrite"] = GrantWrite
+            if GrantWriteACP is not None:
+                params["GrantWriteACP"] = GrantWriteACP
+
+            storage_adapter.client.put_bucket_acl(**params)
+            return {
+                "ResponseMetadata": {
+                    "HTTPStatusCode": 200,
+                },
+            }
+        except Exception as e:
+            raise RuntimeError(f"Failed to set bucket ACL: {e}") from e
+    else:
+        raise NotImplementedError("Storage adapter does not support bucket ACL operations")
+
+
+def get_bucket_acl(
+    client: Any,  # DeltaGliderClient (avoiding circular import)
+    Bucket: str,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Get the ACL for an S3 bucket (boto3-compatible passthrough).
+
+    Args:
+        client: DeltaGliderClient instance
+        Bucket: Bucket name
+        **kwargs: Additional S3 parameters (for compatibility)
+
+    Returns:
+        Response dict with Owner and Grants
+
+    Example:
+        >>> client = create_client()
+        >>> response = client.get_bucket_acl(Bucket='my-bucket')
+        >>> print(response['Owner'])
+        >>> print(response['Grants'])
+    """
+    storage_adapter = client.service.storage
+
+    if hasattr(storage_adapter, "client"):
+        try:
+            response: dict[str, Any] = storage_adapter.client.get_bucket_acl(Bucket=Bucket)
+            return response
+        except Exception as e:
+            raise RuntimeError(f"Failed to get bucket ACL: {e}") from e
+    else:
+        raise NotImplementedError("Storage adapter does not support bucket ACL operations")

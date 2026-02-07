@@ -12,6 +12,8 @@ DeltaGlider provides AWS S3 CLI compatible commands with automatic delta compres
 - `deltaglider migrate <source> <destination>` - Migrate S3 buckets with compression and EC2 cost warnings
 - `deltaglider stats <bucket>` - Get bucket statistics and compression metrics
 - `deltaglider verify <s3_url>` - Verify file integrity
+- `deltaglider put-bucket-acl <bucket>` - Set bucket ACL (s3api compatible)
+- `deltaglider get-bucket-acl <bucket>` - Get bucket ACL (s3api compatible)
 
 ### Current Usage Examples
 ```bash
@@ -23,6 +25,14 @@ deltaglider cp s3://bucket/path/to/file.zip .
 
 # Verify integrity
 deltaglider verify s3://bucket/path/to/file.zip.delta
+
+# Set bucket ACL
+deltaglider put-bucket-acl my-bucket --acl public-read
+deltaglider put-bucket-acl my-bucket --acl private
+deltaglider put-bucket-acl my-bucket --grant-read id=12345
+
+# Get bucket ACL
+deltaglider get-bucket-acl my-bucket
 ```
 
 ## Target State: AWS S3 CLI Compatibility

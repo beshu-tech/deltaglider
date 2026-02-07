@@ -79,12 +79,14 @@ deltaglider stats test-bucket                  # Get bucket statistics
 
 ### Available CLI Commands
 ```bash
-cp      # Copy files to/from S3 (AWS S3 compatible)
-ls      # List S3 buckets or objects (AWS S3 compatible)
-rm      # Remove S3 objects (AWS S3 compatible)
-sync    # Synchronize directories with S3 (AWS S3 compatible)
-stats   # Get bucket statistics and compression metrics
-verify  # Verify integrity of delta file
+cp               # Copy files to/from S3 (AWS S3 compatible)
+ls               # List S3 buckets or objects (AWS S3 compatible)
+rm               # Remove S3 objects (AWS S3 compatible)
+sync             # Synchronize directories with S3 (AWS S3 compatible)
+stats            # Get bucket statistics and compression metrics
+verify           # Verify integrity of delta file
+put-bucket-acl   # Set bucket ACL (s3api compatible passthrough)
+get-bucket-acl   # Get bucket ACL (s3api compatible passthrough)
 ```
 
 ## Architecture
