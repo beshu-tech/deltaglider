@@ -283,11 +283,46 @@ class S3StorageAdapter(StoragePort):
                 last_error = e
                 if attempt < max_retries - 1:
                     delay = 2 ** attempt  # 1s, 2s
+                    # Log full error details
+                    error_response = e.response if hasattr(e, "response") else {}
+                    http_headers = error_response.get("ResponseMetadata", {}).get(
+                        "HTTPHeaders", {}
+                    )
                     logger.warning(
                         f"PUT {object_key}: Attempt {attempt + 1}/{max_retries} failed: {e}. "
-                        f"Retrying in {delay}s..."
+                        f"Retrying in {delay}s... "
+                        f"Details: bucket={bucket}, key={object_key}, "
+                        f"body_size={len(body_data)}, content_type={content_type}, "
+                        f"metadata_keys={list(clean_metadata.keys())}, "
+                        f"endpoint={self.client.meta.endpoint_url}, "
+                        f"http_status={error_response.get('ResponseMetadata', {}).get('HTTPStatusCode')}, "
+                        f"error_code={error_response.get('Error', {}).get('Code')}, "
+                        f"error_message={error_response.get('Error', {}).get('Message')}, "
+                        f"request_id={error_response.get('ResponseMetadata', {}).get('RequestId')}, "
+                        f"http_headers={dict(http_headers)}"
                     )
+                    # Enable botocore wire-level logging for the retry
+                    logging.getLogger("botocore").setLevel(logging.DEBUG)
                     time.sleep(delay)
+                else:
+                    # Final attempt failed — log everything
+                    error_response = e.response if hasattr(e, "response") else {}
+                    http_headers = error_response.get("ResponseMetadata", {}).get(
+                        "HTTPHeaders", {}
+                    )
+                    logger.error(
+                        f"PUT {object_key}: All {max_retries} attempts failed. "
+                        f"Last error: {e}. "
+                        f"Details: bucket={bucket}, key={object_key}, "
+                        f"body_size={len(body_data)}, content_type={content_type}, "
+                        f"metadata={clean_metadata}, "
+                        f"endpoint={self.client.meta.endpoint_url}, "
+                        f"http_status={error_response.get('ResponseMetadata', {}).get('HTTPStatusCode')}, "
+                        f"error_code={error_response.get('Error', {}).get('Code')}, "
+                        f"error_message={error_response.get('Error', {}).get('Message')}, "
+                        f"request_id={error_response.get('ResponseMetadata', {}).get('RequestId')}, "
+                        f"http_headers={dict(http_headers)}"
+                    )
 
         raise RuntimeError(f"Failed to put object: {last_error}") from last_error
 
