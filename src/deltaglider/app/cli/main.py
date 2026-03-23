@@ -155,8 +155,11 @@ def _version_callback(ctx: click.Context, param: click.Parameter, value: bool) -
 @click.pass_context
 def cli(ctx: click.Context, debug: bool) -> None:
     """DeltaGlider - Delta-aware S3 file storage wrapper."""
+    import logging
+
     log_level = "DEBUG" if debug else os.environ.get("DG_LOG_LEVEL", "INFO")
     ctx.obj = create_service(log_level)
+    logging.getLogger("deltaglider").info("deltaglider %s", __version__)
 
 
 @cli.command()
