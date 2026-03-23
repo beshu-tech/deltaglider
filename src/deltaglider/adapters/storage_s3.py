@@ -282,12 +282,10 @@ class S3StorageAdapter(StoragePort):
             except ClientError as e:
                 last_error = e
                 if attempt < max_retries - 1:
-                    delay = 2 ** attempt  # 1s, 2s
+                    delay = 2**attempt  # 1s, 2s
                     # Log full error details
                     error_response = e.response if hasattr(e, "response") else {}
-                    http_headers = error_response.get("ResponseMetadata", {}).get(
-                        "HTTPHeaders", {}
-                    )
+                    http_headers = error_response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
                     logger.warning(
                         f"PUT {object_key}: Attempt {attempt + 1}/{max_retries} failed: {e}. "
                         f"Retrying in {delay}s... "
@@ -307,9 +305,7 @@ class S3StorageAdapter(StoragePort):
                 else:
                     # Final attempt failed — log everything
                     error_response = e.response if hasattr(e, "response") else {}
-                    http_headers = error_response.get("ResponseMetadata", {}).get(
-                        "HTTPHeaders", {}
-                    )
+                    http_headers = error_response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
                     logger.error(
                         f"PUT {object_key}: All {max_retries} attempts failed. "
                         f"Last error: {e}. "
