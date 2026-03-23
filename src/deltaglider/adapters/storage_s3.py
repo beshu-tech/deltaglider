@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Optional
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from ..ports.storage import ObjectHead, PutResult, StoragePort
@@ -42,6 +43,13 @@ class S3StorageAdapter(StoragePort):
             client_params: dict[str, Any] = {
                 "service_name": "s3",
                 "endpoint_url": endpoint_url or os.environ.get("AWS_ENDPOINT_URL"),
+                # Disable automatic request checksums (CRC32/CRC64) added in
+                # boto3 1.36+. S3-compatible stores like Hetzner Object Storage
+                # reject the checksum headers with BadRequest.
+                "config": Config(
+                    request_checksum_calculation="when_required",
+                    response_checksum_validation="when_required",
+                ),
             }
 
             # Merge in any additional boto3 kwargs (credentials, region, etc.)

@@ -257,3 +257,23 @@ Core delta logic is in `src/deltaglider/core/service.py`:
 - **Persistent Keys**: Set `DG_CACHE_ENCRYPTION_KEY` only for cross-process cache sharing (use secrets management)
 - **Content-Addressed Storage**: SHA256-based filenames prevent collision attacks
 - **Zero-Trust Cache**: All cache operations include cryptographic validation
+
+## Dependency Management
+
+### Pinning Strategy
+Runtime dependencies in `pyproject.toml` use **compatible range pins** (`>=x.y.z,<NEXT_MAJOR`). This prevents surprise breaking changes from major versions while allowing patch/minor updates.
+
+**Critical dependency: `boto3`** — This is the most breakage-prone dependency. AWS periodically changes default behaviors in minor releases (e.g., boto3 1.36+ added automatic request checksums that break S3-compatible stores like Hetzner Object Storage). The S3 adapter (`adapters/storage_s3.py`) explicitly sets `request_checksum_calculation="when_required"` to maintain compatibility with non-AWS S3 endpoints.
+
+### Quarterly Dependency Refresh (do every ~3 months)
+1. **Check for updates**: `uv pip compile pyproject.toml --upgrade --dry-run`
+2. **Update in a branch**: bump version floors in `pyproject.toml` to current stable releases
+3. **Run full test suite**: `uv run pytest` (unit + integration)
+4. **Test against S3-compatible stores**: test a small file upload against Hetzner (or whichever non-AWS endpoint is in use) — boto3 updates are the most likely to break this
+5. **Rebuild Docker image** and test the same upload from the container
+6. **Check changelogs** for boto3, cryptography, and click for any deprecation notices or behavior changes
+
+### Known Compatibility Constraints
+- **boto3**: Must use `request_checksum_calculation="when_required"` for Hetzner/MinIO compatibility. If upgrading past a new major behavior change, test direct uploads (non-delta path) of small files to non-AWS endpoints.
+- **cryptography**: Fernet API has been stable, but major versions may drop old OpenSSL support. Verify cache encryption still works after upgrades.
+- **click**: CLI argument parsing. Major versions may change decorator behavior. Run integration tests (`test_aws_cli_commands_v2.py`) after upgrades.
