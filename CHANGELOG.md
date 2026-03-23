@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.1] - 2026-03-23
+
+### Fixed
+- **S3-Compatible Endpoint Support**: Disabled boto3 automatic request checksums (CRC32/CRC64) that were added in boto3 1.36+. S3-compatible stores like Hetzner Object Storage reject these headers with `BadRequest`, breaking direct (non-delta) file uploads. Sets `request_checksum_calculation="when_required"` to restore compatibility while still working with AWS S3.
+- **CI: LocalStack pinned to 4.4** — `localstack/localstack:latest` now requires a paid license; pinned to last free version across all workflows and docker-compose files.
+
+### Changed
+- **Dependency Pinning**: All runtime dependencies now use major-version upper bounds (`boto3>=1.35.0,<2.0.0`, etc.) to prevent surprise breaking changes in Docker builds.
+
+### Added
+- **S3 Compatibility Tests**: New `test_s3_compat.py` unit tests verifying the boto3 client disables automatic checksums and `put_object` doesn't pass checksum kwargs — regression protection for non-AWS S3 endpoints.
+- **Dependency Management Guide**: Added quarterly dependency refresh checklist and known compatibility constraints to CLAUDE.md.
+
 ## [6.1.0] - 2025-02-07
 
 ### Added
