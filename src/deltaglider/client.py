@@ -1446,7 +1446,7 @@ def create_client(
     )
 
     # SECURITY: Always use ephemeral process-isolated cache
-    cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-", dir="/tmp"))
+    cache_dir = Path(tempfile.mkdtemp(prefix="deltaglider-"))
     # Register cleanup handler to remove cache on exit
     atexit.register(lambda: shutil.rmtree(cache_dir, ignore_errors=True))
 
