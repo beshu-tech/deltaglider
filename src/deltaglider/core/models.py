@@ -58,6 +58,20 @@ METADATA_KEY_ALIASES: dict[str, tuple[str, ...]] = {
         "delta-cmd",
     ),
     "note": (f"{METADATA_PREFIX}note", "dg_note", "note"),
+    # `compression` was historically written bare (no prefix) by the
+    # direct-upload path; v6.1.2 aligned it to the dashed namespace.
+    # Both forms must continue to resolve so already-stored objects
+    # keep being recognised on read.
+    "compression": (f"{METADATA_PREFIX}compression", "dg_compression", "compression"),
+    # `source-name` is reference-only metadata. Listed here so a
+    # single call to `resolve_metadata(meta, "source_name")` works
+    # uniformly with the rest of this table.
+    "source_name": (
+        f"{METADATA_PREFIX}source-name",
+        "dg_source_name",
+        "source_name",
+        "source-name",
+    ),
 }
 
 

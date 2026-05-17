@@ -30,6 +30,7 @@ from .errors import (
     PolicyViolationWarning,
 )
 from .models import (
+    METADATA_PREFIX,
     DeleteResult,
     DeltaMeta,
     DeltaSpace,
@@ -177,9 +178,15 @@ class DeltaService:
         if obj_head is None:
             raise NotFoundError(f"Object not found: {object_key.key}")
 
-        # Check if this is a regular S3 object (not uploaded via DeltaGlider)
-        # Regular S3 objects won't have DeltaGlider metadata (dg-file-sha256 key)
-        if "dg-file-sha256" not in obj_head.metadata:
+        # Check if this is a regular S3 object (not uploaded via
+        # DeltaGlider). A DeltaGlider-managed object always carries a
+        # `file_sha256` field — could be the canonical `dg-file-sha256`
+        # (new direct + all delta + all reference uploads) OR the
+        # legacy bare `file_sha256` (pre-v6.1.2 direct uploads). Use
+        # `resolve_metadata` so both schemes route to the
+        # DeltaGlider-managed download branches instead of the
+        # "regular S3 object" passthrough.
+        if resolve_metadata(obj_head.metadata, "file_sha256") is None:
             # This is a regular S3 object, download it directly
             self.logger.info(
                 "Downloading regular S3 object (no DeltaGlider metadata)",
@@ -198,8 +205,11 @@ class DeltaService:
             self.metrics.timing("deltaglider.get.duration", duration)
             return
 
-        # Check if this is a direct upload (non-delta) uploaded via DeltaGlider
-        if obj_head.metadata.get("compression") == "none":
+        # Check if this is a direct upload (non-delta) uploaded via
+        # DeltaGlider. Use `resolve_metadata` so we recognise both the
+        # legacy bare `compression` key and the new dashed
+        # `dg-compression` key.
+        if resolve_metadata(obj_head.metadata, "compression") == "none":
             # Direct download without delta processing
             self._get_direct(object_key, obj_head, out)
             duration = (self.clock.now() - start_time).total_seconds()
@@ -591,14 +601,22 @@ class DeltaService:
             key = original_name
         full_key = f"{delta_space.bucket}/{key}"
 
-        # Create metadata for the file
+        # Create metadata for the file using the dashed `dg-*`
+        # namespace so direct uploads match the same scheme as delta /
+        # reference uploads. Pre-v6.1.2 versions wrote these keys bare
+        # (e.g. `original_name` instead of `dg-original-name`); the
+        # METADATA_KEY_ALIASES table in core/models.py keeps the bare
+        # forms resolvable on read so already-stored objects keep
+        # working. New uploads emit the canonical dashed form so
+        # downstream consumers (the Rust S3 proxy in particular) stop
+        # logging PATHOLOGICAL warnings on every .sha1 / .sha512 list.
         metadata = {
-            "tool": self.tool_version,
-            "original_name": original_name,
-            "file_sha256": file_sha256,
-            "file_size": str(file_size),
-            "created_at": self.clock.now().isoformat(),
-            "compression": "none",  # Mark as non-compressed
+            f"{METADATA_PREFIX}tool": self.tool_version,
+            f"{METADATA_PREFIX}original-name": original_name,
+            f"{METADATA_PREFIX}file-sha256": file_sha256,
+            f"{METADATA_PREFIX}file-size": str(file_size),
+            f"{METADATA_PREFIX}created-at": self.clock.now().isoformat(),
+            f"{METADATA_PREFIX}compression": "none",  # Mark as non-compressed
         }
 
         # Upload the file directly
@@ -642,11 +660,13 @@ class DeltaService:
             self._delete_reference(object_key, full_key, result)
         elif object_key.key.endswith(".delta"):
             self._delete_delta(object_key, full_key, obj_head, result)
-        elif obj_head.metadata.get("compression") == "none":
+        elif resolve_metadata(obj_head.metadata, "compression") == "none":
             self.storage.delete(full_key)
             result.deleted = True
             result.type = "direct"
-            result.original_name = obj_head.metadata.get("original_name", object_key.key)
+            result.original_name = (
+                resolve_metadata(obj_head.metadata, "original_name") or object_key.key
+            )
         else:
             self.storage.delete(full_key)
             result.deleted = True
@@ -712,7 +732,7 @@ class DeltaService:
         self.storage.delete(full_key)
         result.deleted = True
         result.type = "delta"
-        result.original_name = obj_head.metadata.get("original_name", "unknown")
+        result.original_name = resolve_metadata(obj_head.metadata, "original_name") or "unknown"
 
         if "/" not in object_key.key:
             return
@@ -841,7 +861,7 @@ class DeltaService:
                     affected_deltaspaces.add("/".join(obj.key.split("/")[:-1]))
             else:
                 obj_head = self.storage.head(f"{bucket}/{obj.key}")
-                if obj_head and obj_head.metadata.get("compression") == "none":
+                if obj_head and resolve_metadata(obj_head.metadata, "compression") == "none":
                     direct_uploads.append(obj.key)
                 else:
                     other_objects.append(obj.key)

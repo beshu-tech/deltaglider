@@ -42,7 +42,7 @@ from .client_operations.stats import StatsMode
 
 from .core import DeltaService, DeltaSpace, ObjectKey
 from .core.errors import NotFoundError
-from .core.models import DeleteResult
+from .core.models import DeleteResult, resolve_metadata
 from .core.object_listing import ObjectListing, list_objects_page
 from .core.s3_uri import parse_s3_url
 from .response_builders import (
@@ -398,10 +398,17 @@ class DeltaGliderClient:
                     obj_head = self.service.storage.head(f"{Bucket}/{obj['key']}")
                     if obj_head and obj_head.metadata:
                         metadata = obj_head.metadata
-                        # Update with actual compression stats
-                        original_size = int(metadata.get("file_size", obj["size"]))
+                        # Update with actual compression stats. Use
+                        # `resolve_metadata` so we accept both the new
+                        # dashed `dg-*` keys and the legacy bare ones.
+                        file_size_raw = resolve_metadata(metadata, "file_size")
+                        original_size = int(file_size_raw) if file_size_raw else obj["size"]
+                        # `compression_ratio` isn't in the alias table
+                        # (it's a derived stat, not part of the core
+                        # metadata contract) so fall back to plain
+                        # get() with the legacy bare key.
                         compression_ratio = float(metadata.get("compression_ratio", 0.0))
-                        reference_key = metadata.get("ref_key")
+                        reference_key = resolve_metadata(metadata, "ref_key")
 
                         deltaglider_metadata["deltaglider-original-size"] = str(original_size)
                         deltaglider_metadata["deltaglider-compression-ratio"] = str(

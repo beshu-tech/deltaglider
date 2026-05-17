@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Direct-upload metadata now uses the canonical `dg-*` dashed namespace.** Pre-fix, files routed through `_upload_direct` (non-delta-eligible extensions: `.sha1`, `.sha512`, etc.) wrote metadata with bare underscored keys (`original_name`, `file_sha256`, `compression`) while delta and reference uploads correctly used the namespaced form (`dg-original-name`, `dg-file-sha256`, `dg-compression`). Downstream consumers — most visibly the [DeltaGlider Proxy](https://github.com/beshu-tech/deltaglider_proxy) — only recognised the dashed form, so every `.sha1`/`.sha512` listing triggered a `PATHOLOGICAL | Missing/corrupt DG metadata` warning. Aligned the writer to the canonical scheme so new uploads stop producing log spam.
+
+### Changed
+- **Read path now resolves both schemes uniformly.** The historical bare keys (`original_name`, `compression`, etc.) stay in `METADATA_KEY_ALIASES` so already-stored objects keep being recognised on read — no migration required. Replaced ad-hoc `metadata.get("compression")` / `metadata.get("original_name")` / `metadata.get("file_size")` / `metadata.get("ref_key")` lookups in `DeltaService.get`, `DeltaService.delete`, `_delete_delta`, the recursive-delete listing path, `client.list_objects_v2`, and `client_operations.stats.get_object_info` with `resolve_metadata(meta, field)` calls so both schemes work transparently for the lifetime of the bucket. New `compression` and `source_name` entries added to the alias table.
+- **`DeltaService.get` "regular S3 vs DeltaGlider-managed" dispatch** now uses `resolve_metadata` for the `file_sha256` presence check. Pre-fix, this check looked for the literal string `"dg-file-sha256"` in `obj_head.metadata`, which silently misclassified legacy bare-keyed direct uploads (`file_sha256` without the `dg-` prefix) as "regular S3 objects" — they still served correctly because both branches call `_get_direct`, but the wrong log line fired and the wrong `file_size` value was recorded for telemetry. Caught during adversarial PR review.
+
+### Added
+- **Regression tests for the dual-scheme contract** (`tests/unit/test_metadata_aliases.py`, 11 tests): every alias resolves, new dashed keys win when both are present, empty strings count as missing, the alias-table shape is pinned (first alias dashed, bare underscored alias always present, `compression` + `source_name` present).
+- **`test_direct_upload_emits_dashed_namespace`** in `test_core_service.py` pins the writer to emit `dg-*`-only metadata so the original underscored regression cannot return.
+- **`test_get_legacy_direct_upload_not_misclassified_as_regular_s3`** in `test_core_service.py` pins the `get()` dispatch to route bare-keyed legacy direct uploads through the DeltaGlider-managed branch (not the "regular S3 object" passthrough). Demonstrated to fail without the corresponding `resolve_metadata` swap, pass with it.
+
 ## [6.1.1] - 2026-03-23
 
 ### Fixed

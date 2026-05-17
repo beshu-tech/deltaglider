@@ -132,6 +132,47 @@ class TestDeltaServicePut:
             assert issubclass(w[0].category, PolicyViolationWarning)
             assert "exceeds threshold" in str(w[0].message)
 
+    def test_direct_upload_emits_dashed_namespace(self, service, temp_dir, mock_storage):
+        """Direct-upload (non-delta-eligible files like .sha1) must
+        write metadata in the canonical dg-* dashed namespace.
+
+        Pre-v6.1.2 this path wrote bare underscored keys
+        (``original_name``, ``file_sha256``, ``compression``) which
+        downstream tools — most notably the Rust S3 proxy — didn't
+        recognise, producing a PATHOLOGICAL warning for every
+        listing. Pin the writer to the canonical scheme so the
+        regression doesn't return.
+        """
+        # .sha1 is in the non-delta extensions list → use_delta=False
+        non_archive = temp_dir / "build.zip.sha1"
+        non_archive.write_text("deadbeef  build.zip\n")
+
+        delta_space = DeltaSpace(bucket="test-bucket", prefix="releases/v1")
+        mock_storage.put.return_value = PutResult(etag="direct123")
+
+        summary = service.put(non_archive, delta_space)
+
+        assert summary.operation == "upload_direct"
+        # Capture the metadata dict that was passed to storage.put
+        # (call_args is the LAST call; direct upload makes exactly one).
+        assert mock_storage.put.called
+        _full_key, _local_file, emitted_meta = mock_storage.put.call_args[0]
+
+        # Every key must be in the dg-* dashed namespace.
+        for key in emitted_meta.keys():
+            assert key.startswith("dg-"), (
+                f"Direct-upload metadata key {key!r} must use the dg-* "
+                f"namespace (got: {list(emitted_meta.keys())})"
+            )
+
+        # Spot-check the canonical keys carry the expected values.
+        assert emitted_meta["dg-original-name"] == "build.zip.sha1"
+        assert emitted_meta["dg-compression"] == "none"
+        assert emitted_meta["dg-file-size"] == str(non_archive.stat().st_size)
+        assert emitted_meta["dg-tool"].startswith("deltaglider/")
+        assert "dg-file-sha256" in emitted_meta
+        assert "dg-created-at" in emitted_meta
+
 
 class TestDeltaServiceGet:
     """Test DeltaService.get method."""
@@ -177,6 +218,70 @@ class TestDeltaServiceGet:
         # Verify - file should be downloaded
         assert output_path.exists()
         assert output_path.read_bytes() == test_content
+
+    def test_get_legacy_direct_upload_not_misclassified_as_regular_s3(
+        self, service, mock_storage, temp_dir
+    ):
+        """Pre-v6.1.2 direct uploads have BARE metadata keys
+        (``file_sha256``, ``compression``, ``original_name``) rather
+        than the dashed ``dg-*`` namespace. The "is this a regular S3
+        object or a DeltaGlider-managed one?" dispatch in ``get()``
+        must recognise both schemes — otherwise pre-fix uploads end
+        up in the wrong code path and the "Downloading regular S3
+        object" log line lies about what's actually happening.
+
+        Regression for the dispatch asymmetry caught during PR review.
+        """
+        import hashlib
+        from unittest.mock import MagicMock
+
+        key = ObjectKey(bucket="test-bucket", key="releases/v1/build.zip.sha1")
+        content = b"deadbeef  build.zip\n"
+        real_sha = hashlib.sha256(content).hexdigest()
+
+        # Legacy direct-upload shape — exactly what's stored on
+        # Hetzner today for ~4400 .sha1 / .sha512 files.
+        legacy_direct_meta = {
+            "tool": "deltaglider/6.1.1",
+            "original_name": "build.zip.sha1",
+            "file_sha256": real_sha,
+            "file_size": str(len(content)),
+            "created_at": "2026-05-16T03:28:01.000000",
+            "compression": "none",
+        }
+        mock_storage.head.return_value = ObjectHead(
+            key="releases/v1/build.zip.sha1",
+            size=len(content),
+            etag="legacy",
+            last_modified=None,
+            metadata=legacy_direct_meta,
+        )
+        mock_stream = MagicMock()
+        mock_stream.read.side_effect = [content, b""]
+        mock_storage.get.return_value = mock_stream
+
+        # Capture the log messages so we can assert which branch fired.
+        captured = []
+        orig_info = service.logger.info
+
+        def _capture(msg, **kw):
+            captured.append((msg, kw))
+            orig_info(msg, **kw)
+
+        service.logger.info = _capture
+        try:
+            service.get(key, temp_dir / "out.sha1")
+        finally:
+            service.logger.info = orig_info
+
+        msgs = [m for m, _ in captured]
+        # The dispatch must NOT have mistaken this for a "regular S3
+        # object" — that branch's log message is the canary.
+        assert "Downloading regular S3 object (no DeltaGlider metadata)" not in msgs, (
+            "Legacy bare-keyed direct upload was misclassified as a "
+            "regular S3 object — `get()` dispatch isn't using "
+            "resolve_metadata for the file_sha256 presence check."
+        )
 
 
 class TestDeltaServiceVerify:
