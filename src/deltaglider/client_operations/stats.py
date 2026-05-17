@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 from ..client_models import BucketStats, CompressionEstimate, ObjectInfo
 from ..core.delta_extensions import is_delta_candidate
+from ..core.models import resolve_metadata
 from ..core.object_listing import list_all_objects
 from ..core.s3_uri import parse_s3_url
 
@@ -549,16 +550,22 @@ def get_object_info(
     metadata = obj_head.metadata
     is_delta = key.endswith(".delta")
 
+    # Use resolve_metadata for the dg-* namespace keys so we read
+    # both new (dashed-prefixed) and legacy (bare underscored) uploads
+    # transparently. `last_modified`, `etag`, `compression_ratio` are
+    # not part of the dg-* contract — they're per-listing or derived
+    # fields and stay on direct .get() lookups.
+    file_size_raw = resolve_metadata(metadata, "file_size")
     return ObjectInfo(
         key=key,
         size=obj_head.size,
         last_modified=metadata.get("last_modified", ""),
         etag=metadata.get("etag"),
-        original_size=int(metadata.get("file_size", obj_head.size)),
+        original_size=int(file_size_raw) if file_size_raw else obj_head.size,
         compressed_size=obj_head.size,
         compression_ratio=float(metadata.get("compression_ratio", 0.0)),
         is_delta=is_delta,
-        reference_key=metadata.get("ref_key"),
+        reference_key=resolve_metadata(metadata, "ref_key"),
     )
 
 

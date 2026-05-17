@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Direct-upload metadata now uses the canonical `dg-*` dashed namespace.** Pre-fix, files routed through `_upload_direct` (non-delta-eligible extensions: `.sha1`, `.sha512`, etc.) wrote metadata with bare underscored keys (`original_name`, `file_sha256`, `compression`) while delta and reference uploads correctly used the namespaced form (`dg-original-name`, `dg-file-sha256`, `dg-compression`). Downstream consumers — most visibly the [DeltaGlider Proxy](https://github.com/beshu-tech/deltaglider_proxy) — only recognised the dashed form, so every `.sha1`/`.sha512` listing triggered a `PATHOLOGICAL | Missing/corrupt DG metadata` warning. Aligned the writer to the canonical scheme so new uploads stop producing log spam.
+
+### Changed
+- **Read path now resolves both schemes uniformly.** The historical bare keys (`original_name`, `compression`, etc.) stay in `METADATA_KEY_ALIASES` so already-stored objects keep being recognised on read — no migration required. Replaced ad-hoc `metadata.get("compression")` / `metadata.get("original_name")` lookups in `DeltaService.get`, `DeltaService.delete`, and the recursive-delete + listing paths with `resolve_metadata(meta, field)` calls so both schemes work transparently for the lifetime of the bucket. New `compression` and `source_name` entries added to the alias table.
+
+### Added
+- **Regression tests for the dual-scheme contract** (`tests/unit/test_metadata_aliases.py`): every alias resolves, new dashed keys win when both are present, empty strings count as missing, and `_upload_direct` is pinned to emit dashed keys only (`test_direct_upload_emits_dashed_namespace` in `test_core_service.py`).
+
 ## [6.1.1] - 2026-03-23
 
 ### Fixed

@@ -132,6 +132,47 @@ class TestDeltaServicePut:
             assert issubclass(w[0].category, PolicyViolationWarning)
             assert "exceeds threshold" in str(w[0].message)
 
+    def test_direct_upload_emits_dashed_namespace(self, service, temp_dir, mock_storage):
+        """Direct-upload (non-delta-eligible files like .sha1) must
+        write metadata in the canonical dg-* dashed namespace.
+
+        Pre-v6.1.2 this path wrote bare underscored keys
+        (``original_name``, ``file_sha256``, ``compression``) which
+        downstream tools — most notably the Rust S3 proxy — didn't
+        recognise, producing a PATHOLOGICAL warning for every
+        listing. Pin the writer to the canonical scheme so the
+        regression doesn't return.
+        """
+        # .sha1 is in the non-delta extensions list → use_delta=False
+        non_archive = temp_dir / "build.zip.sha1"
+        non_archive.write_text("deadbeef  build.zip\n")
+
+        delta_space = DeltaSpace(bucket="test-bucket", prefix="releases/v1")
+        mock_storage.put.return_value = PutResult(etag="direct123")
+
+        summary = service.put(non_archive, delta_space)
+
+        assert summary.operation == "upload_direct"
+        # Capture the metadata dict that was passed to storage.put
+        # (call_args is the LAST call; direct upload makes exactly one).
+        assert mock_storage.put.called
+        _full_key, _local_file, emitted_meta = mock_storage.put.call_args[0]
+
+        # Every key must be in the dg-* dashed namespace.
+        for key in emitted_meta.keys():
+            assert key.startswith("dg-"), (
+                f"Direct-upload metadata key {key!r} must use the dg-* "
+                f"namespace (got: {list(emitted_meta.keys())})"
+            )
+
+        # Spot-check the canonical keys carry the expected values.
+        assert emitted_meta["dg-original-name"] == "build.zip.sha1"
+        assert emitted_meta["dg-compression"] == "none"
+        assert emitted_meta["dg-file-size"] == str(non_archive.stat().st_size)
+        assert emitted_meta["dg-tool"].startswith("deltaglider/")
+        assert "dg-file-sha256" in emitted_meta
+        assert "dg-created-at" in emitted_meta
+
 
 class TestDeltaServiceGet:
     """Test DeltaService.get method."""
