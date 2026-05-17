@@ -178,9 +178,15 @@ class DeltaService:
         if obj_head is None:
             raise NotFoundError(f"Object not found: {object_key.key}")
 
-        # Check if this is a regular S3 object (not uploaded via DeltaGlider)
-        # Regular S3 objects won't have DeltaGlider metadata (dg-file-sha256 key)
-        if "dg-file-sha256" not in obj_head.metadata:
+        # Check if this is a regular S3 object (not uploaded via
+        # DeltaGlider). A DeltaGlider-managed object always carries a
+        # `file_sha256` field — could be the canonical `dg-file-sha256`
+        # (new direct + all delta + all reference uploads) OR the
+        # legacy bare `file_sha256` (pre-v6.1.2 direct uploads). Use
+        # `resolve_metadata` so both schemes route to the
+        # DeltaGlider-managed download branches instead of the
+        # "regular S3 object" passthrough.
+        if resolve_metadata(obj_head.metadata, "file_sha256") is None:
             # This is a regular S3 object, download it directly
             self.logger.info(
                 "Downloading regular S3 object (no DeltaGlider metadata)",
