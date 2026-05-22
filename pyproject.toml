@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "deltaglider"
 dynamic = ["version"]
-description = "Store 4TB in 5GB: S3-compatible storage with 99.9% compression for versioned files"
+description = "DEPRECATED — migrate to deltaglider_proxy (Rust): https://github.com/beshu-tech/deltaglider_proxy . Store 4TB in 5GB: S3-compatible storage with 99.9% compression for versioned files."
 authors = [
     {name = "Beshu Tech", email = "info@beshu.tech"},
 ]
@@ -32,7 +32,7 @@ keywords = [
     "devops",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 7 - Inactive",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "Operating System :: OS Independent",

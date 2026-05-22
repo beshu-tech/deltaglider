@@ -142,6 +142,42 @@ def _version_callback(ctx: click.Context, param: click.Parameter, value: bool) -
         ctx.exit(0)
 
 
+# Deprecation banner shown at the top of every CLI invocation (stderr).
+# Suppressed by setting DG_SUPPRESS_DEPRECATION=1 in the environment — for
+# CI/automation that hasn't migrated yet and doesn't want noise on every
+# run. Print only once per process; some commands (e.g. `migrate`) invoke
+# `cli` callbacks transitively.
+_DEPRECATION_PRINTED = False
+
+
+def _print_deprecation_notice() -> None:
+    global _DEPRECATION_PRINTED
+    if _DEPRECATION_PRINTED:
+        return
+    _DEPRECATION_PRINTED = True
+    if os.environ.get("DG_SUPPRESS_DEPRECATION") == "1":
+        return
+    click.echo(
+        "═════════════════════════════════════════════════════════════════\n"
+        " deltaglider (Python) is DEPRECATED as of v6.2.0.\n"
+        "\n"
+        " The canonical implementation is now `deltaglider_proxy`, a single\n"
+        " Rust binary that ships the S3-compatible proxy, the CLI, and the\n"
+        " web UI. Wire format is byte-identical with this tool.\n"
+        "\n"
+        "   brew install beshu-tech/tap/deltaglider_proxy   # or download:\n"
+        "   https://github.com/beshu-tech/deltaglider_proxy/releases\n"
+        "\n"
+        " Then:\n"
+        "   alias dg='deltaglider_proxy s3'\n"
+        "   dg cp s3://bucket/key .\n"
+        "\n"
+        " Suppress this notice: DG_SUPPRESS_DEPRECATION=1\n"
+        "═════════════════════════════════════════════════════════════════",
+        err=True,
+    )
+
+
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 @click.option(
@@ -154,9 +190,14 @@ def _version_callback(ctx: click.Context, param: click.Parameter, value: bool) -
 )
 @click.pass_context
 def cli(ctx: click.Context, debug: bool) -> None:
-    """DeltaGlider - Delta-aware S3 file storage wrapper."""
+    """DeltaGlider - Delta-aware S3 file storage wrapper.
+
+    DEPRECATED as of v6.2.0. Migrate to `deltaglider_proxy` — see
+    https://github.com/beshu-tech/deltaglider_proxy
+    """
     import logging
 
+    _print_deprecation_notice()
     log_level = "DEBUG" if debug else os.environ.get("DG_LOG_LEVEL", "INFO")
     ctx.obj = create_service(log_level)
     logging.getLogger("deltaglider").info("deltaglider %s", __version__)
