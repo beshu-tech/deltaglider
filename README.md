@@ -1,5 +1,40 @@
 # DeltaGlider
 
+> ## ⚠️ DEPRECATED — use [`deltaglider_proxy`](https://github.com/beshu-tech/deltaglider_proxy)
+>
+> This Python package is **deprecated as of v6.2.0** (this is the last
+> feature release). The canonical implementation is now
+> **[`deltaglider_proxy`](https://github.com/beshu-tech/deltaglider_proxy)** —
+> a single Rust binary that ships the S3-compatible proxy, the CLI, and
+> the web UI. Wire format is byte-identical: data written by this tool
+> is readable by `deltaglider_proxy` and vice versa.
+>
+> **Migration:**
+> ```bash
+> # Install the Rust binary (proxy + CLI + UI, one artifact):
+> brew install beshu-tech/tap/deltaglider_proxy
+> # or download from https://github.com/beshu-tech/deltaglider_proxy/releases
+>
+> # Optional alias for Python-style ergonomics:
+> alias dg='deltaglider_proxy s3'
+>
+> # Every Python subcommand has a 1:1 Rust equivalent:
+> deltaglider cp …           →   deltaglider_proxy s3 cp …
+> deltaglider migrate …      →   deltaglider_proxy s3 migrate …
+> deltaglider stats …        →   deltaglider_proxy s3 stats …
+> ```
+>
+> The Python repository will be **archived** approximately one week
+> after the v6.2.0 release. PyPI installs will continue to work
+> indefinitely (PyPI never deletes published versions), but no further
+> updates or security fixes will land here. Open issues and PRs should
+> go to [`deltaglider_proxy`](https://github.com/beshu-tech/deltaglider_proxy/issues).
+>
+> The stderr deprecation notice can be suppressed with
+> `DG_SUPPRESS_DEPRECATION=1` for CI that hasn't migrated yet.
+
+---
+
 [![PyPI version](https://badge.fury.io/py/deltaglider.svg)](https://pypi.org/project/deltaglider/)
 [![GitHub Repository](https://img.shields.io/badge/github-deltaglider-blue.svg)](https://github.com/beshu-tech/deltaglider)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

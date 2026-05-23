@@ -5,9 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.2.0] - 2026-05-22 — Final release; project deprecated
 
-### Fixed
+### Deprecated
+- **The `deltaglider` Python package is deprecated as of this release.**
+  The canonical implementation is now
+  [`deltaglider_proxy`](https://github.com/beshu-tech/deltaglider_proxy), a
+  single Rust binary that ships the S3-compatible proxy, the `s3` CLI
+  (every Python subcommand has a 1:1 Rust equivalent), and the web UI.
+  Wire format is byte-identical: data written by this tool is readable
+  by `deltaglider_proxy` and vice versa.
+- **Every CLI invocation now prints a deprecation banner to stderr.**
+  Set `DG_SUPPRESS_DEPRECATION=1` to silence it for CI/automation that
+  hasn't migrated yet.
+- **PyPI classifier bumped to `Development Status :: 7 - Inactive`.**
+- **Repo will be archived approximately one week after this release.**
+  PyPI installs continue to work indefinitely (PyPI never deletes
+  published versions), but no further updates or security fixes will
+  land. File new issues against
+  [`deltaglider_proxy`](https://github.com/beshu-tech/deltaglider_proxy/issues).
+
+Migration:
+```bash
+brew install beshu-tech/tap/deltaglider_proxy
+# or grab a binary from
+# https://github.com/beshu-tech/deltaglider_proxy/releases
+
+alias dg='deltaglider_proxy s3'
+dg cp foo s3://bucket/foo
+dg ls s3://bucket
+dg migrate s3://src s3://dest
+```
+
+### Fixed (carried from Unreleased)
 - **Direct-upload metadata now uses the canonical `dg-*` dashed namespace.** Pre-fix, files routed through `_upload_direct` (non-delta-eligible extensions: `.sha1`, `.sha512`, etc.) wrote metadata with bare underscored keys (`original_name`, `file_sha256`, `compression`) while delta and reference uploads correctly used the namespaced form (`dg-original-name`, `dg-file-sha256`, `dg-compression`). Downstream consumers — most visibly the [DeltaGlider Proxy](https://github.com/beshu-tech/deltaglider_proxy) — only recognised the dashed form, so every `.sha1`/`.sha512` listing triggered a `PATHOLOGICAL | Missing/corrupt DG metadata` warning. Aligned the writer to the canonical scheme so new uploads stop producing log spam.
 
 ### Changed
