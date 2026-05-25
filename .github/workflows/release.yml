@@ -38,20 +38,23 @@ jobs:
             exit 1
           fi
 
-      - name: Check if tag already exists
-        run: |
-          if git rev-parse "v${{ github.event.inputs.version }}" >/dev/null 2>&1; then
-            echo "Error: Tag v${{ github.event.inputs.version }} already exists"
-            exit 1
-          fi
-
-      - name: Create and push tag
+      # Pre-existing tag is no longer fatal: it lets the workflow
+      # recover from a half-completed earlier run, or from a tag
+      # pushed locally by the maintainer when the bot's PAT lacks
+      # push-tag permission on this org repo (the v6.2.0 release went
+      # this route after PAT_TOKEN's scope proved insufficient).
+      - name: Tag (create if missing, otherwise reuse existing)
         id: create_tag
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
-          git push origin "v${{ github.event.inputs.version }}"
+          git fetch --tags origin
+          if git rev-parse "v${{ github.event.inputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ github.event.inputs.version }} already exists; reusing it."
+          else
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
+            git push origin "v${{ github.event.inputs.version }}"
+          fi
           echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
 
   lint:
