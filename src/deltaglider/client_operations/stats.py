@@ -40,7 +40,7 @@ def _first_metadata_value(metadata: dict[str, Any], *keys: str) -> str | None:
     """Return the first non-empty metadata value matching the provided keys."""
     for key in keys:
         value = metadata.get(key)
-        if value not in (None, ""):
+        if isinstance(value, str) and value:
             return value
     return None
 
